@@ -141,13 +141,26 @@
     "raw" tabs (combined, deduped where a trip appears in both). Only legs that had already <b>actually departed</b>
     and were billed with Cost Type <b>"By Day"</b> (day-rate rented vehicles) and departed from a genuine
     <b>Origin DC</b> (excludes First-Mile feeder legs starting at a collection Hub) are included.
-    Data covers a rolling <b id="windowDaysTxt">–</b>-day window (<b id="dateRangeTxt">–</b>); the last day is
-    usually partial since it's still in progress at load time.
+    Full available data spans <b id="dateRangeTxt">–</b>; use the <b>Date Window</b> control below to pick any
+    sub-range &mdash; every chart and table updates to that range while still showing daily figures. The most
+    recent day is usually partial since it's still in progress at load time.
     <br><br>
     <b>Known gap:</b> some vendors (notably Abimanyu) show markedly fewer trips under this source than the retired
     static CSV export did &mdash; the two trackers above may not cover every linehaul route category (e.g. Transit
     Point SOC&ndash;SOC shuttle runs), so a real vendor may be under-represented here if its routes fall outside
     SOC-LM/FM-SOC.
+  </div>
+
+  <!-- Global date window control -->
+  <div class="filters">
+    <div class="filter-group">
+      <label>Date Window</label>
+      <input type="date" id="fDateFrom">
+      <span style="color:#888">to</span>
+      <input type="date" id="fDateTo">
+    </div>
+    <button class="reset-btn" onclick="resetDateWindow()">Reset to Full Range</button>
+    <span class="result-count" id="dateWindowInfo"></span>
   </div>
 
   <!-- Summary Cards -->
@@ -188,27 +201,6 @@
         </select>
       </h2>
       <div class="chart-wrap tall"><canvas id="chartTrend"></canvas></div>
-    </div>
-  </div>
-
-  <!-- DC x Date table -->
-  <div class="table-box">
-    <h2>Trips Catered by "By Day" per Origin DC, per Day</h2>
-    <div class="subtxt">Click a column header to sort. Use the search box to jump to a DC.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Search DC</label>
-        <input type="text" id="fDcSearch" placeholder="e.g. Benowo…" style="width:200px">
-      </div>
-      <button class="export-btn" onclick="exportDcDate()">⬇ Export CSV</button>
-      <span class="result-count" id="dcResultCount"></span>
-    </div>
-    <div class="table-scroll">
-      <table id="dcDateTable">
-        <thead><tr id="dcDateHeadRow"></tr></thead>
-        <tbody id="dcDateBody"></tbody>
-        <tfoot><tr id="dcDateFootRow"></tr></tfoot>
-      </table>
     </div>
   </div>
 
@@ -308,7 +300,7 @@
     <h2>2. Productivity per DC, per Day
       <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
     </h2>
-    <div class="subtxt">Each cell reads <b>Daily LT / Daily Onsited &rarr; Productivity</b>, summed across vendors for that DC.</div>
+    <div class="subtxt">Each cell shows the pure productivity ratio (Daily LT &divide; Daily Onsited), summed across vendors for that DC. Export CSV for the full Onsited/LT breakdown.</div>
     <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
       <div class="filter-group">
         <label>Search DC</label>
@@ -340,6 +332,39 @@
         <thead><tr id="pvHeadRow"></tr></thead>
         <tbody id="pvBody"></tbody>
         <tfoot><tr id="pvFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Onsited DR per Vendor per DC -->
+  <div class="table-box">
+    <h2>Onsited DR &mdash; per Vendor, per Origin DC
+      <select id="vdVehicleFilter"><option value="">All Vehicle Types</option></select>
+    </h2>
+    <div class="subtxt">Distinct vehicles (deduped by Nopol + Vendor) onsited across the selected Date Window, one row per Vendor &times; Origin DC.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Vendor</label>
+        <select id="vdVendorFilter"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Search DC</label>
+        <input type="text" id="vdSearch" placeholder="e.g. Benowo…" style="width:200px">
+      </div>
+      <button class="export-btn" onclick="exportVendorDcOnsited()">⬇ Export CSV</button>
+      <span class="result-count" id="vdResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="vdSortBy('Vendor')">Vendor <span class="sort-icon" id="vds-Vendor">↕</span></th>
+            <th onclick="vdSortBy('Origin DC')">Origin DC <span class="sort-icon" id="vds-Origin DC">↕</span></th>
+            <th onclick="vdSortBy('Onsited')" style="text-align:right">Onsited <span class="sort-icon" id="vds-Onsited">↓</span></th>
+          </tr>
+        </thead>
+        <tbody id="vdBody"></tbody>
+        <tfoot><tr id="vdFootRow"></tr></tfoot>
       </table>
     </div>
   </div>
@@ -398,9 +423,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   document.getElementById('headerWindowTxt').textContent =
-    'rolling ' + RAW.window_days + '-day window, generated ' + new Date(RAW.generated_at).toLocaleString();
+    'generated ' + new Date(RAW.generated_at).toLocaleString();
   document.getElementById('generatedAtTxt').textContent =
     new Date(RAW.generated_at).toLocaleString();
+  document.getElementById('dateRangeTxt').textContent =
+    RAW.summary.date_min + ' to ' + RAW.summary.date_max;
 
   initDashboard();
 });
@@ -434,116 +461,98 @@ function downloadCSV(filename, headers, rows) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
+// ALL_DATES = every date present anywhere in the data (the full campaign range).
+// DATES = the currently-selected sub-range from the Date Window control; every
+// chart/table below is computed off DATES, so narrowing the window re-scopes
+// everything while still rendering one data point per day within it.
+let ALL_DATES = [];
 let DATES = [];
 
-// ── INIT ──────────────────────────────────────────────────────────────────────
+// ── INIT (runs once) ──────────────────────────────────────────────────────────
 function initDashboard() {
-  DATES = [...new Set(RAW.by_dc_date.map(d=>d.Date))].sort();
+  ALL_DATES = [...RAW.productivity.dates].sort();
+  DATES = ALL_DATES;
 
-  document.getElementById('c-trips').textContent = RAW.summary.total_trips.toLocaleString();
-  document.getElementById('c-vendors').textContent = RAW.summary.total_vendors;
-  document.getElementById('c-dcs').textContent = RAW.summary.total_dcs;
-  document.getElementById('c-days').textContent = DATES.length;
-  document.getElementById('dateRangeTxt').textContent = RAW.summary.date_min + ' to ' + RAW.summary.date_max;
-  document.getElementById('windowDaysTxt').textContent = RAW.productivity.dates.length;
+  const fFrom = document.getElementById('fDateFrom');
+  const fTo = document.getElementById('fDateTo');
+  fFrom.min = fTo.min = ALL_DATES[0];
+  fFrom.max = fTo.max = ALL_DATES[ALL_DATES.length - 1];
+  fFrom.value = ALL_DATES[0];
+  fTo.value = ALL_DATES[ALL_DATES.length - 1];
+  fFrom.addEventListener('change', onDateWindowChange);
+  fTo.addEventListener('change', onDateWindowChange);
 
-  buildVendorChart();
-  buildDCChart();
-  buildTrendChart('top10');
-  buildDcDateTable();
-  buildProductivityCards();
-  buildDcProductivityChart();
-  buildProdDetailTable();
-  buildProdByDcDaily();
-  buildProdByVendorDaily();
-  buildOrderedVsOnsiteTable();
+  document.getElementById('trendMode').addEventListener('change', refreshDashboard);
 
-  document.getElementById('fDcSearch').addEventListener('input', renderDcDateBody);
-  document.getElementById('trendMode').addEventListener('change', e => buildTrendChart(e.target.value));
+  // One-time setup: populate filter dropdowns and attach their listeners.
+  // Re-rendering on Date Window changes is handled by refreshDashboard() below,
+  // calling only the render* functions so options/listeners aren't duplicated.
+  setupDcProductivityChart();
+  setupProdByDcDaily();
+  setupProdByVendorDaily();
+  setupProdDetailTable();
+  setupVendorDcOnsitedTable();
+  setupOrderedVsOnsiteTable();
+
+  refreshDashboard();
 }
 
-// ── DC x DATE TABLE ───────────────────────────────────────────────────────────
-let dcDateRows = [];
-let dcSortCol = 'Total', dcSortAsc = false;
+function onDateWindowChange() {
+  let from = document.getElementById('fDateFrom').value;
+  let to = document.getElementById('fDateTo').value;
+  if (from > to) { [from, to] = [to, from]; }
+  DATES = ALL_DATES.filter(d => d >= from && d <= to);
+  refreshDashboard();
+}
 
-function buildDcDateTable() {
+function resetDateWindow() {
+  document.getElementById('fDateFrom').value = ALL_DATES[0];
+  document.getElementById('fDateTo').value = ALL_DATES[ALL_DATES.length - 1];
+  DATES = ALL_DATES;
+  refreshDashboard();
+}
+
+// Sum a {key, Date, Trips} record list down to totals-per-key within DATES
+function aggByKeyOverDates(records, keyField) {
+  const dset = new Set(DATES);
   const map = {};
-  RAW.by_dc_date.forEach(r => {
-    if (!map[r['Origin DC']]) map[r['Origin DC']] = {};
-    map[r['Origin DC']][r.Date] = r.Trips;
-  });
-  dcDateRows = Object.keys(map).map(dc => {
-    const row = { 'Origin DC': dc };
-    let total = 0;
-    DATES.forEach(dt => { const v = map[dc][dt] || 0; row[dt] = v; total += v; });
-    row.Total = total;
-    return row;
-  });
-
-  const headRow = document.getElementById('dcDateHeadRow');
-  let headHtml = `<th onclick="dcSortBy('Origin DC')">Origin DC <span class="sort-icon" id="dcs-Origin DC">↕</span></th>`;
-  DATES.forEach(dt => { headHtml += `<th onclick="dcSortBy('${dt}')" style="text-align:right">${dt} <span class="sort-icon" id="dcs-${dt}">↕</span></th>`; });
-  headHtml += `<th onclick="dcSortBy('Total')" style="text-align:right">Total <span class="sort-icon" id="dcs-Total">↓</span></th>`;
-  headRow.innerHTML = headHtml;
-
-  const footRow = document.getElementById('dcDateFootRow');
-  let footHtml = `<td>Grand Total</td>`;
-  DATES.forEach(dt => {
-    const sum = dcDateRows.reduce((s,r)=>s+(r[dt]||0),0);
-    footHtml += `<td class="num">${sum}</td>`;
-  });
-  const grand = dcDateRows.reduce((s,r)=>s+r.Total,0);
-  footHtml += `<td class="num">${grand}</td>`;
-  footRow.innerHTML = footHtml;
-
-  renderDcDateBody();
+  records.forEach(r => { if (dset.has(r.Date)) map[r[keyField]] = (map[r[keyField]] || 0) + r.Trips; });
+  return Object.keys(map).map(k => ({ [keyField]: k, Trips: map[k] })).sort((a,b) => b.Trips - a.Trips);
 }
 
-function dcSortBy(col) {
-  if (dcSortCol === col) { dcSortAsc = !dcSortAsc; }
-  else { dcSortCol = col; dcSortAsc = col === 'Origin DC'; }
-  document.querySelectorAll('#dcDateHeadRow .sort-icon').forEach(el => el.textContent='↕');
-  const icon = document.getElementById('dcs-'+col);
-  if (icon) icon.textContent = dcSortAsc ? '↑' : '↓';
-  renderDcDateBody();
-}
+// ── REFRESH (runs on init + whenever the Date Window changes) ────────────────
+function refreshDashboard() {
+  document.getElementById('dateWindowInfo').textContent =
+    DATES.length ? `${DATES.length} of ${ALL_DATES.length} available days selected` : 'No days in range';
 
-let dcDateFilteredRows = [];
+  const byDateInRange = RAW.by_date.filter(r => DATES.includes(r.Date));
+  const vendorAgg = aggByKeyOverDates(RAW.by_vendor_date, 'Vendor');
+  const dcAgg = aggByKeyOverDates(RAW.by_dc_date, 'Origin DC');
 
-function renderDcDateBody() {
-  const s = document.getElementById('fDcSearch').value.toLowerCase();
-  let rows = dcDateRows.filter(r => !s || r['Origin DC'].toLowerCase().includes(s));
-  rows.sort((a,b) => {
-    let av = a[dcSortCol], bv = b[dcSortCol];
-    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
-    return dcSortAsc ? (av > bv ? 1:-1) : (av < bv ? 1:-1);
-  });
-  dcDateFilteredRows = rows;
-  document.getElementById('dcResultCount').textContent = `${rows.length} of ${dcDateRows.length} DCs`;
+  document.getElementById('c-trips').textContent = byDateInRange.reduce((s,r)=>s+r.Trips,0).toLocaleString();
+  document.getElementById('c-vendors').textContent = vendorAgg.filter(v=>v.Trips>0).length;
+  document.getElementById('c-dcs').textContent = dcAgg.filter(d=>d.Trips>0).length;
+  document.getElementById('c-days').textContent = DATES.length;
 
-  const tbody = document.getElementById('dcDateBody');
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${DATES.length+2}" class="no-data">No matching Origin DC.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = rows.map(r => {
-    let html = `<tr><td>${r['Origin DC']}</td>`;
-    DATES.forEach(dt => { html += `<td class="num">${r[dt] ? r[dt] : '–'}</td>`; });
-    html += `<td class="num" style="font-weight:800">${r.Total}</td></tr>`;
-    return html;
-  }).join('');
-}
-
-function exportDcDate() {
-  const headers = ['Origin DC', ...DATES, 'Total'];
-  const rows = dcDateFilteredRows.map(r => [r['Origin DC'], ...DATES.map(dt => r[dt] || 0), r.Total]);
-  downloadCSV('trips_by_day_per_dc_per_day.csv', headers, rows);
+  buildVendorChart(vendorAgg);
+  buildDCChart(dcAgg);
+  buildTrendChart(document.getElementById('trendMode').value, vendorAgg, dcAgg);
+  buildProductivityCards();
+  renderDcProductivityChart();
+  applyProdFilters();
+  renderProdByDcDaily();
+  renderProdByVendorDaily();
+  renderVendorDcOnsitedTable();
+  ovoRenderTable();
 }
 
 // ── CHARTS ────────────────────────────────────────────────────────────────────
-function buildVendorChart() {
-  const vendors = RAW.by_vendor.filter(v=>v.Trips > 0).sort((a,b)=>b.Trips-a.Trips);
-  new Chart(document.getElementById('chartVendor'), {
+let vendorChart = null, dcChart = null;
+
+function buildVendorChart(vendorAgg) {
+  const vendors = vendorAgg.filter(v=>v.Trips > 0);
+  if (vendorChart) vendorChart.destroy();
+  vendorChart = new Chart(document.getElementById('chartVendor'), {
     type: 'bar',
     data: {
       labels: vendors.map(v=>v.Vendor),
@@ -565,9 +574,10 @@ function buildVendorChart() {
   });
 }
 
-function buildDCChart() {
-  const dcs = RAW.by_dc.slice(0,20);
-  new Chart(document.getElementById('chartDC'), {
+function buildDCChart(dcAgg) {
+  const dcs = dcAgg.slice(0,20);
+  if (dcChart) dcChart.destroy();
+  dcChart = new Chart(document.getElementById('chartDC'), {
     type: 'bar',
     data: {
       labels: dcs.map(d=>d['Origin DC'].replace(' DC','').replace('Transit Point ','TP ')),
@@ -592,24 +602,36 @@ function buildDCChart() {
 
 // ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
 function buildProductivityCards() {
-  const p = RAW.productivity;
-  document.getElementById('p-units').textContent = p.total_onsited.toLocaleString();
-  document.getElementById('p-trips').textContent = p.total_trips.toLocaleString();
-  document.getElementById('p-avg').textContent = (p.overall_productivity === null ? 0 : p.overall_productivity).toFixed(2);
-  document.getElementById('p-avgday').textContent = Math.round(p.total_onsited / p.dates.length).toLocaleString();
+  const dset = new Set(DATES);
+  const rows = RAW.productivity.detail.filter(r => dset.has(r.Date));
+  const totalOnsited = rows.reduce((s,r)=>s+r.Onsited,0);
+  const totalTrips = rows.reduce((s,r)=>s+r.LT_Trips,0);
+  const overall = totalOnsited > 0 ? totalTrips / totalOnsited : null;
+  document.getElementById('p-units').textContent = totalOnsited.toLocaleString();
+  document.getElementById('p-trips').textContent = totalTrips.toLocaleString();
+  document.getElementById('p-avg').textContent = (overall === null ? 0 : overall).toFixed(2);
+  document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
 }
 
-// Shared cell formatter: "LT / Onsited -> Productivity" used by both pivot tables below
+// Shared cell formatter: "LT / Onsited -> Productivity" used by the per-vendor pivot table
 function fmtCell(c) {
   if (!c || (c.Onsited === 0 && c.LT_Trips === 0)) return '–';
   const prod = c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '<span style="color:#aaa">–</span>';
   return `${c.LT_Trips} / ${c.Onsited} &rarr; <b>${prod}</b>`;
 }
 
-// Groups RAW.productivity.detail by `groupField` x Date, optionally restricted to one Vehicle Type
+// Pure productivity ratio only, no LT/Onsited breakdown shown - used by the per-DC pivot table
+function fmtProdOnly(c) {
+  if (!c || c.Onsited === 0) return '–';
+  return (c.LT_Trips / c.Onsited).toFixed(2);
+}
+
+// Groups RAW.productivity.detail by `groupField` x Date (within the selected Date Window),
+// optionally restricted to one Vehicle Type
 function pivotByField(groupField, vehicleType) {
-  const dates = RAW.productivity.dates;
-  const src = RAW.productivity.detail.filter(r => !vehicleType || r['Vehicle Type'] === vehicleType);
+  const dates = DATES;
+  const dset = new Set(dates);
+  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vehicleType || r['Vehicle Type'] === vehicleType));
   const map = {};
   src.forEach(r => {
     const k = r[groupField];
@@ -632,16 +654,17 @@ function pivotByField(groupField, vehicleType) {
   return { dates, rows };
 }
 
-function pivotFootRow(rows, dates) {
+function pivotFootRow(rows, dates, formatter) {
+  formatter = formatter || fmtCell;
   let footHtml = '';
   dates.forEach(dt => {
     const o = rows.reduce((s, r) => s + r[dt].Onsited, 0);
     const t = rows.reduce((s, r) => s + r[dt].LT_Trips, 0);
-    footHtml += `<td class="num">${fmtCell({ Onsited: o, LT_Trips: t })}</td>`;
+    footHtml += `<td class="num">${formatter({ Onsited: o, LT_Trips: t })}</td>`;
   });
   const go = rows.reduce((s, r) => s + r.total.Onsited, 0);
   const gt = rows.reduce((s, r) => s + r.total.LT_Trips, 0);
-  footHtml += `<td class="num">${fmtCell({ Onsited: go, LT_Trips: gt })}</td>`;
+  footHtml += `<td class="num">${formatter({ Onsited: go, LT_Trips: gt })}</td>`;
   return footHtml;
 }
 
@@ -665,12 +688,11 @@ function exportPivotCSV(filename, rowLabel, rows, dates) {
 
 // ── PRODUCTIVITY TREND CHART (Top 10 DCs, line = DC, x = date) ───────────────
 let dcProductivityChart = null;
-function buildDcProductivityChart() {
+function setupDcProductivityChart() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
   const sel = document.getElementById('dcTrendVehicleFilter');
   vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
   sel.addEventListener('change', renderDcProductivityChart);
-  renderDcProductivityChart();
 }
 
 function renderDcProductivityChart() {
@@ -702,14 +724,13 @@ function renderDcProductivityChart() {
   });
 }
 
-// ── 2. Productivity per DC, per Day ───────────────────────────────────────────
-function buildProdByDcDaily() {
+// ── 2. Productivity per DC, per Day (pure productivity, no LT/Onsited shown) ─
+function setupProdByDcDaily() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
   const sel = document.getElementById('dcVehicleFilter');
   vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
   sel.addEventListener('change', renderProdByDcDaily);
   document.getElementById('pdcSearch').addEventListener('input', renderProdByDcDaily);
-  renderProdByDcDaily();
 }
 
 let pdcFilteredRows = [], pdcDates = [];
@@ -736,13 +757,13 @@ function renderProdByDcDaily() {
   } else {
     tbody.innerHTML = rows.map(r => {
       let html = `<tr><td>${r.key}</td>`;
-      dates.forEach(dt => { html += `<td class="num">${fmtCell(r[dt])}</td>`; });
-      html += `<td class="num" style="font-weight:800">${fmtCell(r.total)}</td></tr>`;
+      dates.forEach(dt => { html += `<td class="num">${fmtProdOnly(r[dt])}</td>`; });
+      html += `<td class="num" style="font-weight:800">${fmtProdOnly(r.total)}</td></tr>`;
       return html;
     }).join('');
   }
 
-  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates);
+  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates, fmtProdOnly);
 }
 
 function exportProdByDcDaily() {
@@ -750,12 +771,11 @@ function exportProdByDcDaily() {
 }
 
 // ── 3. Productivity per Vendor, per Day ───────────────────────────────────────
-function buildProdByVendorDaily() {
+function setupProdByVendorDaily() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
   const sel = document.getElementById('vendorVehicleFilter');
   vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
   sel.addEventListener('change', renderProdByVendorDaily);
-  renderProdByVendorDaily();
 }
 
 let pvFilteredRows = [], pvDates = [];
@@ -798,11 +818,9 @@ let pSortCol = 'LT_Trips', pSortAsc = false;
 let pPage = 1;
 const P_PAGE_SIZE = 25;
 
-function buildProdDetailTable() {
-  pFiltered = [...RAW.productivity.detail];
+function setupProdDetailTable() {
   const vendors = [...new Set(RAW.productivity.detail.map(d=>d.Vendor))].sort();
   const vehicles = [...new Set(RAW.productivity.detail.map(d=>d['Vehicle Type']))].sort();
-  const dates = RAW.productivity.dates;
 
   const vs = document.getElementById('fpVendor');
   vendors.forEach(v=>{ let o=document.createElement('option'); o.value=v; o.textContent=v; vs.appendChild(o); });
@@ -810,15 +828,15 @@ function buildProdDetailTable() {
   const vhs = document.getElementById('fpVehicle');
   vehicles.forEach(vh=>{ let o=document.createElement('option'); o.value=vh; o.textContent=vh; vhs.appendChild(o); });
 
+  // Populated from the full campaign range - independent of the Date Window
+  // control - so a date outside the current window can still be picked here.
   const ds = document.getElementById('fpDate');
-  dates.forEach(dt=>{ let o=document.createElement('option'); o.value=dt; o.textContent=dt; ds.appendChild(o); });
+  ALL_DATES.forEach(dt=>{ let o=document.createElement('option'); o.value=dt; o.textContent=dt; ds.appendChild(o); });
 
   document.getElementById('fpVendor').addEventListener('change', applyProdFilters);
   document.getElementById('fpVehicle').addEventListener('change', applyProdFilters);
   document.getElementById('fpDate').addEventListener('change', applyProdFilters);
   document.getElementById('fpSearch').addEventListener('input', applyProdFilters);
-
-  pRenderTable();
 }
 
 function applyProdFilters() {
@@ -826,11 +844,12 @@ function applyProdFilters() {
   const vh = document.getElementById('fpVehicle').value;
   const dt = document.getElementById('fpDate').value;
   const s = document.getElementById('fpSearch').value.toLowerCase();
+  const dset = new Set(DATES);
 
   pFiltered = RAW.productivity.detail.filter(r =>
+    (dt ? r.Date===dt : dset.has(r.Date)) &&
     (!v || r.Vendor===v) &&
     (!vh || r['Vehicle Type']===vh) &&
-    (!dt || r.Date===dt) &&
     (!s || r['Origin DC'].toLowerCase().includes(s))
   );
   pPage = 1;
@@ -910,11 +929,11 @@ function pChangePage(dir) {
 }
 
 let trendChart = null;
-function buildTrendChart(mode) {
+function buildTrendChart(mode, vendorAgg, dcAgg) {
   if (trendChart) trendChart.destroy();
   let datasets = [];
   if (mode === 'top10') {
-    const top10 = RAW.by_dc.slice(0,10).map(d=>d['Origin DC']);
+    const top10 = dcAgg.slice(0,10).map(d=>d['Origin DC']);
     datasets = top10.map((dc,i) => {
       const rows = RAW.by_dc_date.filter(r=>r['Origin DC']===dc);
       return {
@@ -926,7 +945,7 @@ function buildTrendChart(mode) {
       };
     });
   } else {
-    const vendors = RAW.by_vendor.filter(v=>v.Trips>0).map(v=>v.Vendor);
+    const vendors = vendorAgg.filter(v=>v.Trips>0).map(v=>v.Vendor);
     datasets = vendors.map(v => {
       const rows = RAW.by_vendor_date.filter(r=>r.Vendor===v);
       return {
@@ -952,21 +971,101 @@ function buildTrendChart(mode) {
   });
 }
 
+// ── ONSITED DR PER VENDOR PER DC (within the selected Date Window) ──────────
+let vdRows = [], vdSortCol = 'Onsited', vdSortAsc = false;
+
+function setupVendorDcOnsitedTable() {
+  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
+  const vSel = document.getElementById('vdVehicleFilter');
+  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; vSel.appendChild(o); });
+
+  const vendors = [...new Set(RAW.productivity.detail.map(d => d.Vendor))].sort();
+  const vendSel = document.getElementById('vdVendorFilter');
+  vendors.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; vendSel.appendChild(o); });
+
+  vSel.addEventListener('change', renderVendorDcOnsitedTable);
+  vendSel.addEventListener('change', renderVendorDcOnsitedTable);
+  document.getElementById('vdSearch').addEventListener('input', renderVendorDcOnsitedTable);
+}
+
+function vdSortBy(col) {
+  if (vdSortCol === col) { vdSortAsc = !vdSortAsc; }
+  else { vdSortCol = col; vdSortAsc = col === 'Vendor' || col === 'Origin DC'; }
+  document.querySelectorAll('[id^="vds-"]').forEach(el => el.textContent = '↕');
+  const icon = document.getElementById('vds-' + col);
+  if (icon) icon.textContent = vdSortAsc ? '↑' : '↓';
+  renderVendorDcOnsitedTable();
+}
+
+function renderVendorDcOnsitedTable() {
+  const vt = document.getElementById('vdVehicleFilter').value;
+  const vendorFilter = document.getElementById('vdVendorFilter').value;
+  const search = document.getElementById('vdSearch').value.toLowerCase();
+  const dset = new Set(DATES);
+
+  const src = RAW.productivity.detail.filter(r =>
+    dset.has(r.Date) &&
+    (!vt || r['Vehicle Type'] === vt) &&
+    (!vendorFilter || r.Vendor === vendorFilter)
+  );
+
+  const map = {};
+  src.forEach(r => {
+    const key = r.Vendor + '|' + r['Origin DC'];
+    map[key] = (map[key] || 0) + r.Onsited;
+  });
+
+  let rows = Object.keys(map)
+    .map(key => { const [Vendor, dc] = key.split('|'); return { Vendor, 'Origin DC': dc, Onsited: map[key] }; })
+    .filter(r => r.Onsited > 0 && (!search || r['Origin DC'].toLowerCase().includes(search)));
+
+  rows.sort((a, b) => {
+    let av = a[vdSortCol], bv = b[vdSortCol];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return vdSortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+  vdRows = rows;
+
+  document.getElementById('vdResultCount').textContent = `${rows.length} rows`;
+
+  const tbody = document.getElementById('vdBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="no-data">No data matches your filters.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(r => {
+      const c = vendorColor(r.Vendor);
+      return `<tr>
+        <td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.Vendor}</span></td>
+        <td>${r['Origin DC']}</td>
+        <td class="num" style="font-weight:800">${r.Onsited}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const grand = rows.reduce((s, r) => s + r.Onsited, 0);
+  document.getElementById('vdFootRow').innerHTML = `<td>Grand Total</td><td></td><td class="num">${grand}</td>`;
+}
+
+function exportVendorDcOnsited() {
+  const headers = ['Vendor', 'Origin DC', 'Onsited'];
+  const rows = vdRows.map(r => [r.Vendor, r['Origin DC'], r.Onsited]);
+  downloadCSV('onsited_dr_per_vendor_per_dc.csv', headers, rows);
+}
+
 // ── ORDERED vs ONSITED DR TABLE, PER DAY ─────────────────────────────────────
 function ovoFmtCell(c) {
   if (!c || (c.Ordered === 0 && c.Onsited === 0)) return '–';
   return `${c.Ordered || 0} / <b>${c.Onsited || 0}</b>`;
 }
 
-function buildOrderedVsOnsiteTable() {
+function setupOrderedVsOnsiteTable() {
   document.getElementById('ovoSearch').addEventListener('input', ovoRenderTable);
-  ovoRenderTable();
 }
 
 let ovoFilteredRows = [], ovoDates = [];
 
 function ovoRenderTable() {
-  const dates = RAW.ordered_vs_onsite_daily.dates;
+  const dates = DATES;
   const search = document.getElementById('ovoSearch').value.toLowerCase();
 
   // Campaign totals for the "Ordered" side come from the static booking total

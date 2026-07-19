@@ -28,7 +28,6 @@ SHEET_IDS = {
     'ONSITE': '1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y',
     'ORDER': '1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E',
 }
-WINDOW_DAYS = 7
 ORDER_HEADER_ROW = 12  # header sits at row 12 on that specific tab as of 7.7 campaign
 
 TRACKER_COLS = ['trip_date_v2', 'trip_route', 'slot_number', 'trip_number', 'cost_type',
@@ -100,22 +99,21 @@ def build_trips_first_leg(gc):
     idx = departed.groupby('trip_number')['atd_dt'].idxmin()
     first_leg = departed.loc[idx].copy()
 
-    anchor_date = first_leg['atd_dt'].max()
-    if pd.isna(anchor_date):
-        anchor_date = pd.Timestamp.now()
-    window_dates = [(anchor_date.normalize() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(WINDOW_DAYS - 1, -1, -1)]
-
     first_leg['Date'] = first_leg['atd_dt'].dt.strftime('%Y-%m-%d')
-    first_leg = first_leg[first_leg['Date'].isin(window_dates)]
     first_leg = first_leg[first_leg['origin_station'].astype(str).str.endswith(' DC')]
+
+    # No fixed rolling window - the full date range actually present in the
+    # trackers is exposed to the client, which lets the user pick any sub-range
+    # via the date-window control while still showing daily granularity.
+    all_dates = sorted(first_leg['Date'].dropna().unique().tolist())
 
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
     })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date']]
 
-    print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips in window')
-    return trips, window_dates
+    print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
+    return trips, all_dates
 
 
 def build_onsite(gc, window_dates):
@@ -316,7 +314,7 @@ def main():
 
     print('Fetching trip trackers (SOC-LM/FM-SOC)...')
     trips, window_dates = build_trips_first_leg(gc)
-    print(f'  Window: {window_dates}')
+    print(f'  Date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Fetching onsite registrations...')
     onsite = build_onsite(gc, window_dates)
@@ -334,7 +332,6 @@ def main():
     raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
     raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
     raw['generated_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    raw['window_days'] = WINDOW_DAYS
     raw['order_sheet_available'] = order is not None
 
     errors = []

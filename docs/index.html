@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Rent Vendor Trip Analysis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+    color: white; padding: 20px 32px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+  header h1 { font-size: 1.4rem; font-weight: 700; }
+  header p { font-size: 0.8rem; opacity: 0.7; margin-top: 3px; }
+  .badge { background: #06d6a0; color: #063; font-size: 0.7rem; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px; }
+
+  .main { padding: 24px 32px; max-width: 1600px; margin: 0 auto; }
+
+  .note { background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
+    padding: 10px 16px; font-size: 0.78rem; color: #7a5c00; margin-bottom: 20px; }
+  .note b { color: #5c4400; }
+
+  #errorBanner { display: none; background: #fdecea; border: 1px solid #f5b8b1; border-radius: 10px;
+    padding: 10px 16px; font-size: 0.78rem; color: #7a1c14; margin-bottom: 20px; }
+  #errorBanner b { color: #5c1510; }
+
+  /* Summary Cards */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 12px; padding: 18px 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid; }
+  .card.blue  { border-color: #0f3460; }
+  .card.red   { border-color: #e94560; }
+  .card.green { border-color: #06d6a0; }
+  .card.gold  { border-color: #f4a261; }
+  .card-val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+  .card.blue  .card-val { color: #0f3460; }
+  .card.red   .card-val { color: #e94560; }
+  .card.green .card-val { color: #06d6a0; }
+  .card.gold  .card-val { color: #f4a261; }
+  .card-lbl { font-size: 0.78rem; color: #666; margin-top: 4px; }
+
+  /* Charts row */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .chart-box { background: white; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .chart-box.full { grid-column: 1 / -1; }
+  .chart-box h2 { font-size: 0.9rem; font-weight: 700; color: #1a1a2e; margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: space-between; }
+  .chart-box h2 select { font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; }
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.tall { height: 340px; }
+
+  /* Filters */
+  .filters { background: white; border-radius: 12px; padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 16px;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .filters label { font-size: 0.78rem; color: #555; font-weight: 600; }
+  .filters select, .filters input {
+    border: 1px solid #ddd; border-radius: 7px; padding: 6px 10px;
+    font-size: 0.82rem; color: #1a1a2e; outline: none; background: #fafafa; }
+  .filters select:focus, .filters input:focus { border-color: #0f3460; }
+  .filter-group { display: flex; align-items: center; gap: 8px; }
+  .reset-btn { background: #e94560; color: white; border: none; border-radius: 7px;
+    padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600; }
+  .reset-btn:hover { background: #c73652; }
+  .export-btn { background: #0f3460; color: white; border: none; border-radius: 7px;
+    padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px; }
+  .export-btn:hover { background: #0c2a4d; }
+  .result-count { margin-left: auto; font-size: 0.78rem; color: #888; }
+
+  /* Table */
+  .table-box { background: white; border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .table-box h2 { font-size: 0.9rem; font-weight: 700; padding: 16px 20px 0;
+    color: #1a1a2e; }
+  .table-box .subtxt { font-size: 0.76rem; color: #888; padding: 2px 20px 10px; }
+  .table-scroll { overflow-x: auto; max-height: 560px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  thead tr { background: #1a1a2e; color: white; position: sticky; top: 0; z-index: 2; }
+  th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 0.78rem;
+    letter-spacing: 0.03em; white-space: nowrap; cursor: pointer; user-select: none; }
+  th:hover { background: #0f3460; }
+  th .sort-icon { font-size: 0.65rem; margin-left: 4px; opacity: 0.6; }
+  tbody tr:nth-child(even) { background: #f8f9fb; }
+  tbody tr:hover { background: #eef2ff; }
+  td { padding: 9px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  td.num { text-align: right; font-weight: 600; }
+  td.vendor-cell { font-weight: 700; }
+  tfoot td { font-weight: 800; background: #f0f2f5; border-top: 2px solid #ccc; }
+
+  .vendor-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+  }
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar-bg { flex: 1; background: #eee; border-radius: 4px; height: 7px; min-width: 60px; }
+  .bar-fill { height: 7px; border-radius: 4px; }
+  .trips-num { min-width: 30px; text-align: right; font-weight: 700; font-size: 0.82rem; }
+
+  .no-data { text-align: center; padding: 40px; color: #aaa; font-size: 0.9rem; }
+
+  /* Pagination */
+  .pagination { display: flex; align-items: center; gap: 8px;
+    padding: 14px 20px; border-top: 1px solid #eee; justify-content: flex-end; }
+  .pagination button { border: 1px solid #ddd; background: white; border-radius: 6px;
+    padding: 5px 11px; cursor: pointer; font-size: 0.8rem; }
+  .pagination button:hover:not(:disabled) { background: #0f3460; color: white; border-color: #0f3460; }
+  .pagination button:disabled { opacity: 0.35; cursor: default; }
+  .pagination span { font-size: 0.78rem; color: #666; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Daily Rent Vendor Trip Analysis</h1>
+    <p>SPX Express &middot; Cost Type = "By Day" &middot; First-leg trips only &middot; <span id="headerWindowTxt">rolling window</span></p>
+  </div>
+  <span class="badge" id="liveBadge">&#9679; UPDATED <span id="generatedAtTxt"></span></span>
+</header>
+
+<div class="main">
+
+  <div id="errorBanner">
+    <b>Some data sources could not be loaded:</b>
+    <ul id="errorList" style="margin:6px 0 0 20px;"></ul>
+    The rest of the dashboard reflects whatever loaded successfully.
+  </div>
+
+  <div class="note">
+    <b>Scope of this dashboard:</b> Each LT number is counted once, using only its <b>first leg</b> (the leg with the
+    earliest actual departure time, i.e. Origin DC departure). Trip data is pulled on a schedule from the
+    <a href="https://docs.google.com/spreadsheets/d/1nLurOQ1JJRRVcyA_-egi32J6nGj9darabA-al3OwG7E" target="_blank" rel="noopener">Linehaul Trip Compliance Tracker [SOC-LM]</a>
+    and <a href="https://docs.google.com/spreadsheets/d/1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0" target="_blank" rel="noopener">[FM-SOC]</a>
+    "raw" tabs (combined, deduped where a trip appears in both). Only legs that had already <b>actually departed</b>
+    and were billed with Cost Type <b>"By Day"</b> (day-rate rented vehicles) and departed from a genuine
+    <b>Origin DC</b> (excludes First-Mile feeder legs starting at a collection Hub) are included.
+    Data covers a rolling <b id="windowDaysTxt">–</b>-day window (<b id="dateRangeTxt">–</b>); the last day is
+    usually partial since it's still in progress at load time.
+    <br><br>
+    <b>Known gap:</b> some vendors (notably Abimanyu) show markedly fewer trips under this source than the retired
+    static CSV export did &mdash; the two trackers above may not cover every linehaul route category (e.g. Transit
+    Point SOC&ndash;SOC shuttle runs), so a real vendor may be under-represented here if its routes fall outside
+    SOC-LM/FM-SOC.
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="cards">
+    <div class="card blue">
+      <div class="card-val" id="c-trips">–</div>
+      <div class="card-lbl">Total "By Day" Trips</div>
+    </div>
+    <div class="card red">
+      <div class="card-val" id="c-vendors">–</div>
+      <div class="card-lbl">Active Daily Rent Vendors</div>
+    </div>
+    <div class="card green">
+      <div class="card-val" id="c-dcs">–</div>
+      <div class="card-lbl">Origin DCs Covered</div>
+    </div>
+    <div class="card gold">
+      <div class="card-val" id="c-days">–</div>
+      <div class="card-lbl">Days with Data</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts">
+    <div class="chart-box">
+      <h2>Trips by Vendor</h2>
+      <div class="chart-wrap"><canvas id="chartVendor"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>Top 20 Origin DCs by Trips</h2>
+      <div class="chart-wrap"><canvas id="chartDC"></canvas></div>
+    </div>
+    <div class="chart-box full">
+      <h2>Daily Trip Trend
+        <select id="trendMode">
+          <option value="top10">Top 10 Origin DCs</option>
+          <option value="vendor">By Vendor</option>
+        </select>
+      </h2>
+      <div class="chart-wrap tall"><canvas id="chartTrend"></canvas></div>
+    </div>
+  </div>
+
+  <!-- DC x Date table -->
+  <div class="table-box">
+    <h2>Trips Catered by "By Day" per Origin DC, per Day</h2>
+    <div class="subtxt">Click a column header to sort. Use the search box to jump to a DC.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Search DC</label>
+        <input type="text" id="fDcSearch" placeholder="e.g. Benowo…" style="width:200px">
+      </div>
+      <button class="export-btn" onclick="exportDcDate()">⬇ Export CSV</button>
+      <span class="result-count" id="dcResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table id="dcDateTable">
+        <thead><tr id="dcDateHeadRow"></tr></thead>
+        <tbody id="dcDateBody"></tbody>
+        <tfoot><tr id="dcDateFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Productivity -->
+  <h2 style="font-size:1.05rem; font-weight:800; margin:32px 0 12px; color:#1a1a2e;">Vendor Productivity &mdash; Trips per Onsite Daily Rent Unit</h2>
+  <div class="note" style="background:#eef2ff; border-color:#c7d2fe; color:#28304d;">
+    DR = Daily Rent = Cost Type <b>"By Day"</b>, applied consistently on both sides of this ratio.
+    <b>Daily Onsited</b> = count of check-ins on the
+    <a href="https://docs.google.com/spreadsheets/d/1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y" target="_blank" rel="noopener">[29309] On Site Registration sheet</a>
+    with <code>cost_type = "By Day"</code> and <code>arrival_status</code> not <b>"Expired"</b> or <b>"No Show"</b> &mdash;
+    i.e. vehicles that actually showed up, whether On Time, Late, or still Pending check-out.
+    <b>Note:</b> this sheet has no plate number or registration ID, so unlike the earlier data source there is
+    nothing to dedupe repeat check-ins by &mdash; each qualifying row counts as one onsite unit. If the same
+    physical vehicle gets registered more than once the same day, it is counted more than once here.
+    <b>Daily LT (using DR)</b> = first-leg trips that had actually departed, billed Cost Type "By Day".
+    <b>Productivity</b> = Daily LT &divide; Daily Onsited.
+  </div>
+
+  <div class="cards">
+    <div class="card blue">
+      <div class="card-val" id="p-units">–</div>
+      <div class="card-lbl">Total Onsited (vehicle-days)</div>
+    </div>
+    <div class="card red">
+      <div class="card-val" id="p-trips">–</div>
+      <div class="card-lbl">Total LT Trips using DR</div>
+    </div>
+    <div class="card green">
+      <div class="card-val" id="p-avg">–</div>
+      <div class="card-lbl">Overall Productivity (Trips/Onsited)</div>
+    </div>
+    <div class="card gold">
+      <div class="card-val" id="p-avgday">–</div>
+      <div class="card-lbl">Avg Onsited Units per Day</div>
+    </div>
+  </div>
+
+  <!-- Productivity trend by DC -->
+  <div class="charts">
+    <div class="chart-box full">
+      <h2>Productivity Trend by DC (Top 10)
+        <select id="dcTrendVehicleFilter"><option value="">All Vehicle Types</option></select>
+      </h2>
+      <div class="chart-wrap tall"><canvas id="chartDcProductivity"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 1. Vendor x DC x Date onsite/LT table -->
+  <div class="table-box">
+    <h2>1. Productivity: Vendor, DC, Daily Onsited &amp; Daily LT using DR</h2>
+    <div class="subtxt">One row per Vendor &times; Origin DC &times; Vehicle Type &times; Day. Sortable, filterable.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Vendor</label>
+        <select id="fpVendor"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Vehicle Type</label>
+        <select id="fpVehicle"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Date</label>
+        <select id="fpDate"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Search DC</label>
+        <input type="text" id="fpSearch" placeholder="e.g. Benowo…" style="width:200px">
+      </div>
+      <button class="reset-btn" onclick="resetProdFilters()">Reset</button>
+      <button class="export-btn" onclick="exportProdDetail()">⬇ Export CSV</button>
+      <span class="result-count" id="pResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="pSortBy('Vendor')">Vendor <span class="sort-icon" id="ps-Vendor">↕</span></th>
+            <th onclick="pSortBy('Origin DC')">Origin DC <span class="sort-icon" id="ps-Origin DC">↕</span></th>
+            <th onclick="pSortBy('Vehicle Type')">Vehicle Type <span class="sort-icon" id="ps-Vehicle Type">↕</span></th>
+            <th onclick="pSortBy('Date')">Date <span class="sort-icon" id="ps-Date">↕</span></th>
+            <th onclick="pSortBy('Onsited')" style="text-align:right">Daily Onsited <span class="sort-icon" id="ps-Onsited">↕</span></th>
+            <th onclick="pSortBy('LT_Trips')" style="text-align:right">Daily LT using DR <span class="sort-icon" id="ps-LT_Trips">↓</span></th>
+            <th onclick="pSortBy('Productivity')" style="text-align:right">Productivity <span class="sort-icon" id="ps-Productivity">↕</span></th>
+          </tr>
+        </thead>
+        <tbody id="pDetailTableBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button id="pBtnPrev" onclick="pChangePage(-1)">← Prev</button>
+      <span id="pPageInfo"></span>
+      <button id="pBtnNext" onclick="pChangePage(1)">Next →</button>
+    </div>
+  </div>
+
+  <!-- 2. Productivity per DC, per Day, filterable by Vehicle Type -->
+  <div class="table-box">
+    <h2>2. Productivity per DC, per Day
+      <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
+    </h2>
+    <div class="subtxt">Each cell reads <b>Daily LT / Daily Onsited &rarr; Productivity</b>, summed across vendors for that DC.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Search DC</label>
+        <input type="text" id="pdcSearch" placeholder="e.g. Benowo…" style="width:200px">
+      </div>
+      <button class="export-btn" onclick="exportProdByDcDaily()">⬇ Export CSV</button>
+      <span class="result-count" id="pdcResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="pdcHeadRow"></tr></thead>
+        <tbody id="pdcBody"></tbody>
+        <tfoot><tr id="pdcFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. Productivity per Vendor, per Day, filterable by Vehicle Type -->
+  <div class="table-box">
+    <h2>3. Productivity per Vendor, per Day
+      <select id="vendorVehicleFilter"><option value="">All Vehicle Types</option></select>
+    </h2>
+    <div class="subtxt">Each cell reads <b>Daily LT / Daily Onsited &rarr; Productivity</b>, summed across DCs for that vendor.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <button class="export-btn" onclick="exportProdByVendorDaily()">⬇ Export CSV</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="pvHeadRow"></tr></thead>
+        <tbody id="pvBody"></tbody>
+        <tfoot><tr id="pvFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ordered vs Onsited DR, daily -->
+  <div class="table-box">
+    <h2>Ordered DR vs Onsited DR, by Origin DC &amp; Vehicle Type &mdash; per Day</h2>
+    <div class="subtxt" id="ovoSubtxt">
+      Each cell reads <b>Ordered / Onsited</b>. <b>Ordered</b> = units booked on the
+      <a href="https://docs.google.com/spreadsheets/d/1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E" target="_blank" rel="noopener">DR order sheet</a>
+      whose contract window (Start&ndash;End date) covers that day. <b>Onsited</b> = check-ins ("By Day",
+      excl. Expired/No Show) at that DC on that specific day &mdash; the current source sheet has no plate/ID
+      to dedupe by, so a vehicle registered twice the same day counts twice. The order sheet only has two coarse
+      categories, <b>CDD L</b> and <b>WB</b>; WB is mapped to the onsite system's <b>TRONTON (10WH)</b> record,
+      and CDD L covers every other Vehicle Type recorded onsite. The Campaign-to-date column sums Onsited across
+      days, so it can exceed the campaign-to-date Ordered count.
+    </div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Search DC</label>
+        <input type="text" id="ovoSearch" placeholder="e.g. Benowo…" style="width:200px">
+      </div>
+      <button class="export-btn" onclick="exportOrderedVsOnsite()">⬇ Export CSV</button>
+      <span class="result-count" id="ovoResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="ovoHeadRow"></tr></thead>
+        <tbody id="ovoBody"></tbody>
+        <tfoot><tr id="ovoFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── STATIC DATA EMBED ─────────────────────────────────────────────────────────
+// This page is pre-rendered by gh-sync/scripts/build.py on a schedule (GitHub
+// Actions) - no live Google Sheets reads happen at page-load time. RAW is the
+// full pre-computed dashboard payload, baked directly into this file.
+const RAW = {"summary":{"total_trips":2752,"total_vendors":11,"total_dcs":52,"total_vehicle_types":4,"date_min":"2026-07-12","date_max":"2026-07-18"},"by_vendor":[{"Vendor":"Unicorn","Trips":1389},{"Vendor":"Lynthaz","Trips":908},{"Vendor":"SYU","Trips":158},{"Vendor":"TSC","Trips":97},{"Vendor":"MTJ","Trips":55},{"Vendor":"ARSY","Trips":53},{"Vendor":"KLI","Trips":44},{"Vendor":"KJM","Trips":39},{"Vendor":"GNU","Trips":6},{"Vendor":"Logisly","Trips":2},{"Vendor":"Abimanyu","Trips":1}],"by_dc":[{"Origin DC":"Benowo DC","Trips":298},{"Origin DC":"Semarang DC","Trips":179},{"Origin DC":"Kediri DC","Trips":177},{"Origin DC":"Rungkut DC","Trips":163},{"Origin DC":"Percut Sei Tuan DC","Trips":146},{"Origin DC":"Benowo 3 DC","Trips":137},{"Origin DC":"Lampung 2 DC","Trips":132},{"Origin DC":"Medan Amplas DC","Trips":105},{"Origin DC":"Palembang DC","Trips":100},{"Origin DC":"Medan DC","Trips":98},{"Origin DC":"Cinambo DC","Trips":88},{"Origin DC":"Sidoarjo DC","Trips":82},{"Origin DC":"Solo DC","Trips":76},{"Origin DC":"Bandung Kopo DC","Trips":76},{"Origin DC":"Berbah DC","Trips":74},{"Origin DC":"Aceh DC","Trips":72},{"Origin DC":"Banyumas 2 DC","Trips":69},{"Origin DC":"Arjawinangun DC","Trips":68},{"Origin DC":"Purbalingga DC","Trips":64},{"Origin DC":"Padang DC","Trips":55},{"Origin DC":"Mantikulore DC","Trips":46},{"Origin DC":"Cirebon DC","Trips":46},{"Origin DC":"Jember DC","Trips":41},{"Origin DC":"Bengkulu DC","Trips":33},{"Origin DC":"Lubuk Linggau DC","Trips":33},{"Origin DC":"Dumai DC","Trips":32},{"Origin DC":"Kudus DC","Trips":30},{"Origin DC":"Ngawi DC","Trips":29},{"Origin DC":"Tegal DC","Trips":20},{"Origin DC":"Jambi 2 DC","Trips":20},{"Origin DC":"Banjarmasin DC","Trips":17},{"Origin DC":"Surabaya DC","Trips":17},{"Origin DC":"Balikpapan DC","Trips":15},{"Origin DC":"Ketapang Kalbar DC","Trips":13},{"Origin DC":"Ngawi 2 DC","Trips":12},{"Origin DC":"Rancaekek DC","Trips":12},{"Origin DC":"Malang DC","Trips":11},{"Origin DC":"Maros DC","Trips":11},{"Origin DC":"Kawalu DC","Trips":10},{"Origin DC":"Pekanbaru DC","Trips":9},{"Origin DC":"Badung DC","Trips":7},{"Origin DC":"Siborong - Borong DC","Trips":6},{"Origin DC":"Banyumas DC","Trips":4},{"Origin DC":"Tasikmalaya DC","Trips":4},{"Origin DC":"Pekalongan DC","Trips":3},{"Origin DC":"Kebumen DC","Trips":3},{"Origin DC":"Transit Point Sunter DC","Trips":2},{"Origin DC":"Rancaekek 2 DC","Trips":2},{"Origin DC":"Transit Point Sunter 2 DC","Trips":2},{"Origin DC":"Cakung DC","Trips":1},{"Origin DC":"Sunter DC","Trips":1},{"Origin DC":"Transit Point Neglasari DC","Trips":1}],"detail":[{"Vendor":"ARSY","Origin DC":"Malang DC","Vehicle Type":"CDE LONG (4WH)","Trips":11},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Trips":42},{"Vendor":"Abimanyu","Origin DC":"Transit Point Neglasari DC","Vehicle Type":"TRONTON (10WH)","Trips":1},{"Vendor":"GNU","Origin DC":"Cakung DC","Vehicle Type":"CDD LONG (6WH)","Trips":1},{"Vendor":"GNU","Origin DC":"Sunter DC","Vehicle Type":"CDD LONG (6WH)","Trips":1},{"Vendor":"GNU","Origin DC":"Transit Point Sunter 2 DC","Vehicle Type":"CDD LONG (6WH)","Trips":2},{"Vendor":"GNU","Origin DC":"Transit Point Sunter DC","Vehicle Type":"CDD LONG (6WH)","Trips":2},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Trips":6},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Trips":33},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Trips":34},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Trips":10},{"Vendor":"Logisly","Origin DC":"Kediri DC","Vehicle Type":"CDE LONG (4WH)","Trips":2},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Trips":7},{"Vendor":"Lynthaz","Origin DC":"Banyumas DC","Vehicle Type":"CDD LONG (6WH)","Trips":4},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Trips":83},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Trips":269},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Trips":54},{"Vendor":"Lynthaz","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Trips":1},{"Vendor":"Lynthaz","Origin DC":"Kebumen DC","Vehicle Type":"CDD LONG (6WH)","Trips":3},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Trips":7},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Trips":49},{"Vendor":"Lynthaz","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Trips":2},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Trips":28},{"Vendor":"Lynthaz","Origin DC":"Pekalongan DC","Vehicle Type":"CDD LONG (6WH)","Trips":3},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Trips":41},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Trips":119},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Trips":122},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Trips":41},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Trips":59},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Trips":16},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Trips":55},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Trips":38},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Trips":23},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Trips":73},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Trips":10},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Trips":14},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Trips":14},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Trips":69},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Trips":14},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Trips":34},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Trips":25},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Trips":15},{"Vendor":"Unicorn","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Trips":3},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Trips":17},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Trips":33},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Trips":54},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Trips":29},{"Vendor":"Unicorn","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Trips":6},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Trips":88},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Trips":13},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Trips":32},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Trips":20},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Trips":40},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Trips":71},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Trips":13},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Trips":28},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Trips":132},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Trips":33},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Trips":46},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Trips":11},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Trips":35},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Trips":28},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Trips":70},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Trips":28},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Trips":12},{"Vendor":"Unicorn","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Trips":1},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Trips":100},{"Vendor":"Unicorn","Origin DC":"Pekanbaru DC","Vehicle Type":"CDD LONG (6WH)","Trips":9},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Trips":107},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Trips":39},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Trips":23},{"Vendor":"Unicorn","Origin DC":"Rancaekek 2 DC","Vehicle Type":"CDD LONG (6WH)","Trips":2},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Trips":12},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Trips":44},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Trips":57},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Trips":6},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Trips":41},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Trips":17},{"Vendor":"Unicorn","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Trips":7},{"Vendor":"Unicorn","Origin DC":"Tasikmalaya DC","Vehicle Type":"CDD LONG (6WH)","Trips":4},{"Vendor":"Unicorn","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Trips":4}],"by_dc_date":[{"Origin DC":"Aceh DC","Date":"2026-07-12","Trips":11},{"Origin DC":"Aceh DC","Date":"2026-07-13","Trips":11},{"Origin DC":"Aceh DC","Date":"2026-07-14","Trips":11},{"Origin DC":"Aceh DC","Date":"2026-07-15","Trips":11},{"Origin DC":"Aceh DC","Date":"2026-07-16","Trips":10},{"Origin DC":"Aceh DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Aceh DC","Date":"2026-07-18","Trips":8},{"Origin DC":"Arjawinangun DC","Date":"2026-07-12","Trips":13},{"Origin DC":"Arjawinangun DC","Date":"2026-07-13","Trips":12},{"Origin DC":"Arjawinangun DC","Date":"2026-07-14","Trips":10},{"Origin DC":"Arjawinangun DC","Date":"2026-07-15","Trips":8},{"Origin DC":"Arjawinangun DC","Date":"2026-07-16","Trips":12},{"Origin DC":"Arjawinangun DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Arjawinangun DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Badung DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Badung DC","Date":"2026-07-13","Trips":3},{"Origin DC":"Badung DC","Date":"2026-07-14","Trips":1},{"Origin DC":"Badung DC","Date":"2026-07-15","Trips":1},{"Origin DC":"Badung DC","Date":"2026-07-16","Trips":1},{"Origin DC":"Balikpapan DC","Date":"2026-07-12","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-13","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-14","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Balikpapan DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-12","Trips":14},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-13","Trips":15},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-14","Trips":10},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-15","Trips":6},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-16","Trips":13},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-17","Trips":11},{"Origin DC":"Bandung Kopo DC","Date":"2026-07-18","Trips":7},{"Origin DC":"Banjarmasin DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Banjarmasin DC","Date":"2026-07-13","Trips":3},{"Origin DC":"Banjarmasin DC","Date":"2026-07-14","Trips":3},{"Origin DC":"Banjarmasin DC","Date":"2026-07-15","Trips":4},{"Origin DC":"Banjarmasin DC","Date":"2026-07-16","Trips":3},{"Origin DC":"Banjarmasin DC","Date":"2026-07-17","Trips":3},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-12","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-13","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-14","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-15","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-16","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Banyumas 2 DC","Date":"2026-07-18","Trips":9},{"Origin DC":"Banyumas DC","Date":"2026-07-12","Trips":4},{"Origin DC":"Bengkulu DC","Date":"2026-07-12","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-13","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-14","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-15","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-16","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-17","Trips":5},{"Origin DC":"Bengkulu DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Benowo 3 DC","Date":"2026-07-12","Trips":11},{"Origin DC":"Benowo 3 DC","Date":"2026-07-13","Trips":37},{"Origin DC":"Benowo 3 DC","Date":"2026-07-14","Trips":24},{"Origin DC":"Benowo 3 DC","Date":"2026-07-15","Trips":22},{"Origin DC":"Benowo 3 DC","Date":"2026-07-16","Trips":21},{"Origin DC":"Benowo 3 DC","Date":"2026-07-17","Trips":22},{"Origin DC":"Benowo DC","Date":"2026-07-12","Trips":45},{"Origin DC":"Benowo DC","Date":"2026-07-13","Trips":48},{"Origin DC":"Benowo DC","Date":"2026-07-14","Trips":49},{"Origin DC":"Benowo DC","Date":"2026-07-15","Trips":48},{"Origin DC":"Benowo DC","Date":"2026-07-16","Trips":45},{"Origin DC":"Benowo DC","Date":"2026-07-17","Trips":42},{"Origin DC":"Benowo DC","Date":"2026-07-18","Trips":21},{"Origin DC":"Berbah DC","Date":"2026-07-12","Trips":14},{"Origin DC":"Berbah DC","Date":"2026-07-13","Trips":19},{"Origin DC":"Berbah DC","Date":"2026-07-14","Trips":8},{"Origin DC":"Berbah DC","Date":"2026-07-15","Trips":9},{"Origin DC":"Berbah DC","Date":"2026-07-16","Trips":8},{"Origin DC":"Berbah DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Berbah DC","Date":"2026-07-18","Trips":6},{"Origin DC":"Cakung DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Cinambo DC","Date":"2026-07-12","Trips":20},{"Origin DC":"Cinambo DC","Date":"2026-07-13","Trips":14},{"Origin DC":"Cinambo DC","Date":"2026-07-14","Trips":13},{"Origin DC":"Cinambo DC","Date":"2026-07-15","Trips":13},{"Origin DC":"Cinambo DC","Date":"2026-07-16","Trips":12},{"Origin DC":"Cinambo DC","Date":"2026-07-17","Trips":11},{"Origin DC":"Cinambo DC","Date":"2026-07-18","Trips":5},{"Origin DC":"Cirebon DC","Date":"2026-07-13","Trips":13},{"Origin DC":"Cirebon DC","Date":"2026-07-14","Trips":12},{"Origin DC":"Cirebon DC","Date":"2026-07-15","Trips":7},{"Origin DC":"Cirebon DC","Date":"2026-07-16","Trips":7},{"Origin DC":"Cirebon DC","Date":"2026-07-17","Trips":7},{"Origin DC":"Dumai DC","Date":"2026-07-12","Trips":5},{"Origin DC":"Dumai DC","Date":"2026-07-13","Trips":5},{"Origin DC":"Dumai DC","Date":"2026-07-14","Trips":5},{"Origin DC":"Dumai DC","Date":"2026-07-15","Trips":5},{"Origin DC":"Dumai DC","Date":"2026-07-16","Trips":4},{"Origin DC":"Dumai DC","Date":"2026-07-17","Trips":5},{"Origin DC":"Dumai DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-12","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-13","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-14","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-15","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-16","Trips":3},{"Origin DC":"Jambi 2 DC","Date":"2026-07-17","Trips":4},{"Origin DC":"Jambi 2 DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Jember DC","Date":"2026-07-12","Trips":7},{"Origin DC":"Jember DC","Date":"2026-07-13","Trips":7},{"Origin DC":"Jember DC","Date":"2026-07-14","Trips":7},{"Origin DC":"Jember DC","Date":"2026-07-15","Trips":7},{"Origin DC":"Jember DC","Date":"2026-07-16","Trips":7},{"Origin DC":"Jember DC","Date":"2026-07-17","Trips":5},{"Origin DC":"Jember DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Kawalu DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Kawalu DC","Date":"2026-07-13","Trips":2},{"Origin DC":"Kawalu DC","Date":"2026-07-14","Trips":1},{"Origin DC":"Kawalu DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Kawalu DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Kawalu DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Kebumen DC","Date":"2026-07-12","Trips":3},{"Origin DC":"Kediri DC","Date":"2026-07-12","Trips":24},{"Origin DC":"Kediri DC","Date":"2026-07-13","Trips":36},{"Origin DC":"Kediri DC","Date":"2026-07-14","Trips":27},{"Origin DC":"Kediri DC","Date":"2026-07-15","Trips":28},{"Origin DC":"Kediri DC","Date":"2026-07-16","Trips":26},{"Origin DC":"Kediri DC","Date":"2026-07-17","Trips":28},{"Origin DC":"Kediri DC","Date":"2026-07-18","Trips":8},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-12","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-13","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-14","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Ketapang Kalbar DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Kudus DC","Date":"2026-07-12","Trips":4},{"Origin DC":"Kudus DC","Date":"2026-07-13","Trips":11},{"Origin DC":"Kudus DC","Date":"2026-07-14","Trips":3},{"Origin DC":"Kudus DC","Date":"2026-07-15","Trips":3},{"Origin DC":"Kudus DC","Date":"2026-07-16","Trips":5},{"Origin DC":"Kudus DC","Date":"2026-07-17","Trips":4},{"Origin DC":"Lampung 2 DC","Date":"2026-07-12","Trips":21},{"Origin DC":"Lampung 2 DC","Date":"2026-07-13","Trips":22},{"Origin DC":"Lampung 2 DC","Date":"2026-07-14","Trips":23},{"Origin DC":"Lampung 2 DC","Date":"2026-07-15","Trips":21},{"Origin DC":"Lampung 2 DC","Date":"2026-07-16","Trips":20},{"Origin DC":"Lampung 2 DC","Date":"2026-07-17","Trips":20},{"Origin DC":"Lampung 2 DC","Date":"2026-07-18","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-12","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-13","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-14","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-15","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-16","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-17","Trips":5},{"Origin DC":"Lubuk Linggau DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Malang DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Malang DC","Date":"2026-07-17","Trips":7},{"Origin DC":"Malang DC","Date":"2026-07-18","Trips":2},{"Origin DC":"Mantikulore DC","Date":"2026-07-12","Trips":7},{"Origin DC":"Mantikulore DC","Date":"2026-07-13","Trips":6},{"Origin DC":"Mantikulore DC","Date":"2026-07-14","Trips":8},{"Origin DC":"Mantikulore DC","Date":"2026-07-15","Trips":8},{"Origin DC":"Mantikulore DC","Date":"2026-07-16","Trips":7},{"Origin DC":"Mantikulore DC","Date":"2026-07-17","Trips":7},{"Origin DC":"Mantikulore DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Maros DC","Date":"2026-07-12","Trips":2},{"Origin DC":"Maros DC","Date":"2026-07-13","Trips":1},{"Origin DC":"Maros DC","Date":"2026-07-14","Trips":2},{"Origin DC":"Maros DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Maros DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Maros DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Medan Amplas DC","Date":"2026-07-12","Trips":11},{"Origin DC":"Medan Amplas DC","Date":"2026-07-13","Trips":20},{"Origin DC":"Medan Amplas DC","Date":"2026-07-14","Trips":20},{"Origin DC":"Medan Amplas DC","Date":"2026-07-15","Trips":19},{"Origin DC":"Medan Amplas DC","Date":"2026-07-16","Trips":18},{"Origin DC":"Medan Amplas DC","Date":"2026-07-17","Trips":17},{"Origin DC":"Medan DC","Date":"2026-07-12","Trips":17},{"Origin DC":"Medan DC","Date":"2026-07-13","Trips":16},{"Origin DC":"Medan DC","Date":"2026-07-14","Trips":14},{"Origin DC":"Medan DC","Date":"2026-07-15","Trips":13},{"Origin DC":"Medan DC","Date":"2026-07-16","Trips":14},{"Origin DC":"Medan DC","Date":"2026-07-17","Trips":13},{"Origin DC":"Medan DC","Date":"2026-07-18","Trips":11},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-13","Trips":4},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-14","Trips":1},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-15","Trips":1},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Ngawi 2 DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Ngawi DC","Date":"2026-07-12","Trips":5},{"Origin DC":"Ngawi DC","Date":"2026-07-13","Trips":6},{"Origin DC":"Ngawi DC","Date":"2026-07-14","Trips":5},{"Origin DC":"Ngawi DC","Date":"2026-07-15","Trips":5},{"Origin DC":"Ngawi DC","Date":"2026-07-16","Trips":4},{"Origin DC":"Ngawi DC","Date":"2026-07-17","Trips":4},{"Origin DC":"Padang DC","Date":"2026-07-12","Trips":9},{"Origin DC":"Padang DC","Date":"2026-07-13","Trips":8},{"Origin DC":"Padang DC","Date":"2026-07-14","Trips":9},{"Origin DC":"Padang DC","Date":"2026-07-15","Trips":8},{"Origin DC":"Padang DC","Date":"2026-07-16","Trips":8},{"Origin DC":"Padang DC","Date":"2026-07-17","Trips":8},{"Origin DC":"Padang DC","Date":"2026-07-18","Trips":5},{"Origin DC":"Palembang DC","Date":"2026-07-12","Trips":17},{"Origin DC":"Palembang DC","Date":"2026-07-13","Trips":15},{"Origin DC":"Palembang DC","Date":"2026-07-14","Trips":15},{"Origin DC":"Palembang DC","Date":"2026-07-15","Trips":16},{"Origin DC":"Palembang DC","Date":"2026-07-16","Trips":14},{"Origin DC":"Palembang DC","Date":"2026-07-17","Trips":15},{"Origin DC":"Palembang DC","Date":"2026-07-18","Trips":8},{"Origin DC":"Pekalongan DC","Date":"2026-07-12","Trips":3},{"Origin DC":"Pekanbaru DC","Date":"2026-07-12","Trips":9},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-12","Trips":27},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-13","Trips":24},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-14","Trips":22},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-15","Trips":24},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-16","Trips":20},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-17","Trips":20},{"Origin DC":"Percut Sei Tuan DC","Date":"2026-07-18","Trips":9},{"Origin DC":"Purbalingga DC","Date":"2026-07-12","Trips":12},{"Origin DC":"Purbalingga DC","Date":"2026-07-13","Trips":10},{"Origin DC":"Purbalingga DC","Date":"2026-07-14","Trips":11},{"Origin DC":"Purbalingga DC","Date":"2026-07-15","Trips":10},{"Origin DC":"Purbalingga DC","Date":"2026-07-16","Trips":9},{"Origin DC":"Purbalingga DC","Date":"2026-07-17","Trips":9},{"Origin DC":"Purbalingga DC","Date":"2026-07-18","Trips":3},{"Origin DC":"Rancaekek 2 DC","Date":"2026-07-16","Trips":1},{"Origin DC":"Rancaekek 2 DC","Date":"2026-07-17","Trips":1},{"Origin DC":"Rancaekek DC","Date":"2026-07-13","Trips":3},{"Origin DC":"Rancaekek DC","Date":"2026-07-14","Trips":3},{"Origin DC":"Rancaekek DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Rancaekek DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Rancaekek DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Rungkut DC","Date":"2026-07-12","Trips":22},{"Origin DC":"Rungkut DC","Date":"2026-07-13","Trips":18},{"Origin DC":"Rungkut DC","Date":"2026-07-14","Trips":28},{"Origin DC":"Rungkut DC","Date":"2026-07-15","Trips":27},{"Origin DC":"Rungkut DC","Date":"2026-07-16","Trips":32},{"Origin DC":"Rungkut DC","Date":"2026-07-17","Trips":23},{"Origin DC":"Rungkut DC","Date":"2026-07-18","Trips":13},{"Origin DC":"Semarang DC","Date":"2026-07-12","Trips":22},{"Origin DC":"Semarang DC","Date":"2026-07-13","Trips":38},{"Origin DC":"Semarang DC","Date":"2026-07-14","Trips":35},{"Origin DC":"Semarang DC","Date":"2026-07-15","Trips":28},{"Origin DC":"Semarang DC","Date":"2026-07-16","Trips":24},{"Origin DC":"Semarang DC","Date":"2026-07-17","Trips":26},{"Origin DC":"Semarang DC","Date":"2026-07-18","Trips":6},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-13","Trips":1},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-14","Trips":1},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-15","Trips":1},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-16","Trips":1},{"Origin DC":"Siborong - Borong DC","Date":"2026-07-17","Trips":1},{"Origin DC":"Sidoarjo DC","Date":"2026-07-12","Trips":7},{"Origin DC":"Sidoarjo DC","Date":"2026-07-13","Trips":28},{"Origin DC":"Sidoarjo DC","Date":"2026-07-14","Trips":14},{"Origin DC":"Sidoarjo DC","Date":"2026-07-15","Trips":11},{"Origin DC":"Sidoarjo DC","Date":"2026-07-16","Trips":12},{"Origin DC":"Sidoarjo DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Solo DC","Date":"2026-07-12","Trips":6},{"Origin DC":"Solo DC","Date":"2026-07-13","Trips":18},{"Origin DC":"Solo DC","Date":"2026-07-14","Trips":18},{"Origin DC":"Solo DC","Date":"2026-07-15","Trips":11},{"Origin DC":"Solo DC","Date":"2026-07-16","Trips":12},{"Origin DC":"Solo DC","Date":"2026-07-17","Trips":10},{"Origin DC":"Solo DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Sunter DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Surabaya DC","Date":"2026-07-13","Trips":10},{"Origin DC":"Surabaya DC","Date":"2026-07-14","Trips":1},{"Origin DC":"Surabaya DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Surabaya DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Surabaya DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Tasikmalaya DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Tasikmalaya DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Tegal DC","Date":"2026-07-12","Trips":5},{"Origin DC":"Tegal DC","Date":"2026-07-13","Trips":5},{"Origin DC":"Tegal DC","Date":"2026-07-14","Trips":3},{"Origin DC":"Tegal DC","Date":"2026-07-15","Trips":2},{"Origin DC":"Tegal DC","Date":"2026-07-16","Trips":2},{"Origin DC":"Tegal DC","Date":"2026-07-17","Trips":2},{"Origin DC":"Tegal DC","Date":"2026-07-18","Trips":1},{"Origin DC":"Transit Point Neglasari DC","Date":"2026-07-12","Trips":1},{"Origin DC":"Transit Point Sunter 2 DC","Date":"2026-07-12","Trips":2},{"Origin DC":"Transit Point Sunter DC","Date":"2026-07-12","Trips":2}],"by_vendor_date":[{"Vendor":"ARSY","Date":"2026-07-12","Trips":4},{"Vendor":"ARSY","Date":"2026-07-13","Trips":8},{"Vendor":"ARSY","Date":"2026-07-14","Trips":8},{"Vendor":"ARSY","Date":"2026-07-15","Trips":8},{"Vendor":"ARSY","Date":"2026-07-16","Trips":9},{"Vendor":"ARSY","Date":"2026-07-17","Trips":14},{"Vendor":"ARSY","Date":"2026-07-18","Trips":2},{"Vendor":"Abimanyu","Date":"2026-07-12","Trips":1},{"Vendor":"GNU","Date":"2026-07-12","Trips":6},{"Vendor":"KJM","Date":"2026-07-13","Trips":8},{"Vendor":"KJM","Date":"2026-07-14","Trips":9},{"Vendor":"KJM","Date":"2026-07-15","Trips":7},{"Vendor":"KJM","Date":"2026-07-16","Trips":7},{"Vendor":"KJM","Date":"2026-07-17","Trips":7},{"Vendor":"KJM","Date":"2026-07-18","Trips":1},{"Vendor":"KLI","Date":"2026-07-12","Trips":4},{"Vendor":"KLI","Date":"2026-07-13","Trips":8},{"Vendor":"KLI","Date":"2026-07-14","Trips":6},{"Vendor":"KLI","Date":"2026-07-15","Trips":9},{"Vendor":"KLI","Date":"2026-07-16","Trips":8},{"Vendor":"KLI","Date":"2026-07-17","Trips":7},{"Vendor":"KLI","Date":"2026-07-18","Trips":2},{"Vendor":"Logisly","Date":"2026-07-15","Trips":1},{"Vendor":"Logisly","Date":"2026-07-17","Trips":1},{"Vendor":"Lynthaz","Date":"2026-07-12","Trips":143},{"Vendor":"Lynthaz","Date":"2026-07-13","Trips":158},{"Vendor":"Lynthaz","Date":"2026-07-14","Trips":147},{"Vendor":"Lynthaz","Date":"2026-07-15","Trips":142},{"Vendor":"Lynthaz","Date":"2026-07-16","Trips":142},{"Vendor":"Lynthaz","Date":"2026-07-17","Trips":132},{"Vendor":"Lynthaz","Date":"2026-07-18","Trips":44},{"Vendor":"MTJ","Date":"2026-07-12","Trips":9},{"Vendor":"MTJ","Date":"2026-07-13","Trips":8},{"Vendor":"MTJ","Date":"2026-07-14","Trips":9},{"Vendor":"MTJ","Date":"2026-07-15","Trips":8},{"Vendor":"MTJ","Date":"2026-07-16","Trips":8},{"Vendor":"MTJ","Date":"2026-07-17","Trips":8},{"Vendor":"MTJ","Date":"2026-07-18","Trips":5},{"Vendor":"SYU","Date":"2026-07-12","Trips":22},{"Vendor":"SYU","Date":"2026-07-13","Trips":31},{"Vendor":"SYU","Date":"2026-07-14","Trips":23},{"Vendor":"SYU","Date":"2026-07-15","Trips":18},{"Vendor":"SYU","Date":"2026-07-16","Trips":27},{"Vendor":"SYU","Date":"2026-07-17","Trips":24},{"Vendor":"SYU","Date":"2026-07-18","Trips":13},{"Vendor":"TSC","Date":"2026-07-12","Trips":16},{"Vendor":"TSC","Date":"2026-07-13","Trips":13},{"Vendor":"TSC","Date":"2026-07-14","Trips":15},{"Vendor":"TSC","Date":"2026-07-15","Trips":13},{"Vendor":"TSC","Date":"2026-07-16","Trips":14},{"Vendor":"TSC","Date":"2026-07-17","Trips":15},{"Vendor":"TSC","Date":"2026-07-18","Trips":11},{"Vendor":"Unicorn","Date":"2026-07-12","Trips":211},{"Vendor":"Unicorn","Date":"2026-07-13","Trips":282},{"Vendor":"Unicorn","Date":"2026-07-14","Trips":227},{"Vendor":"Unicorn","Date":"2026-07-15","Trips":206},{"Vendor":"Unicorn","Date":"2026-07-16","Trips":198},{"Vendor":"Unicorn","Date":"2026-07-17","Trips":193},{"Vendor":"Unicorn","Date":"2026-07-18","Trips":72}],"by_date":[{"Date":"2026-07-12","Trips":416},{"Date":"2026-07-13","Trips":516},{"Date":"2026-07-14","Trips":444},{"Date":"2026-07-15","Trips":412},{"Date":"2026-07-16","Trips":413},{"Date":"2026-07-17","Trips":401},{"Date":"2026-07-18","Trips":150}],"productivity":{"dates":["2026-07-12","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-18"],"total_onsited":3117,"total_trips":2752,"overall_productivity":0.88,"by_vendor":[{"Vendor":"Unicorn","Onsited":1443,"LT_Trips":1389,"Productivity":0.96},{"Vendor":"Lynthaz","Onsited":1058,"LT_Trips":908,"Productivity":0.86},{"Vendor":"SYU","Onsited":146,"LT_Trips":158,"Productivity":1.08},{"Vendor":"TSC","Onsited":125,"LT_Trips":97,"Productivity":0.78},{"Vendor":"MTJ","Onsited":49,"LT_Trips":55,"Productivity":1.12},{"Vendor":"ARSY","Onsited":78,"LT_Trips":53,"Productivity":0.68},{"Vendor":"KLI","Onsited":48,"LT_Trips":44,"Productivity":0.92},{"Vendor":"KJM","Onsited":45,"LT_Trips":39,"Productivity":0.87},{"Vendor":"GNU","Onsited":0,"LT_Trips":6,"Productivity":null},{"Vendor":"Logisly","Onsited":32,"LT_Trips":2,"Productivity":0.06},{"Vendor":"Abimanyu","Onsited":0,"LT_Trips":1,"Productivity":null},{"Vendor":"ALP","Onsited":14,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Onsited":17,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Onsited":26,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Panorama","Onsited":9,"LT_Trips":0,"Productivity":0.0},{"Vendor":"RPL","Onsited":27,"LT_Trips":0,"Productivity":0.0}],"by_dc":[{"Origin DC":"Benowo DC","Onsited":366,"LT_Trips":298,"Productivity":0.81},{"Origin DC":"Semarang DC","Onsited":191,"LT_Trips":179,"Productivity":0.94},{"Origin DC":"Kediri DC","Onsited":181,"LT_Trips":177,"Productivity":0.98},{"Origin DC":"Rungkut DC","Onsited":167,"LT_Trips":163,"Productivity":0.98},{"Origin DC":"Percut Sei Tuan DC","Onsited":159,"LT_Trips":146,"Productivity":0.92},{"Origin DC":"Benowo 3 DC","Onsited":240,"LT_Trips":137,"Productivity":0.57},{"Origin DC":"Lampung 2 DC","Onsited":129,"LT_Trips":132,"Productivity":1.02},{"Origin DC":"Medan Amplas DC","Onsited":131,"LT_Trips":105,"Productivity":0.8},{"Origin DC":"Palembang DC","Onsited":89,"LT_Trips":100,"Productivity":1.12},{"Origin DC":"Medan DC","Onsited":107,"LT_Trips":98,"Productivity":0.92},{"Origin DC":"Cinambo DC","Onsited":98,"LT_Trips":88,"Productivity":0.9},{"Origin DC":"Sidoarjo DC","Onsited":105,"LT_Trips":82,"Productivity":0.78},{"Origin DC":"Bandung Kopo DC","Onsited":64,"LT_Trips":76,"Productivity":1.19},{"Origin DC":"Solo DC","Onsited":79,"LT_Trips":76,"Productivity":0.96},{"Origin DC":"Berbah DC","Onsited":66,"LT_Trips":74,"Productivity":1.12},{"Origin DC":"Aceh DC","Onsited":64,"LT_Trips":72,"Productivity":1.12},{"Origin DC":"Banyumas 2 DC","Onsited":79,"LT_Trips":69,"Productivity":0.87},{"Origin DC":"Arjawinangun DC","Onsited":69,"LT_Trips":68,"Productivity":0.99},{"Origin DC":"Purbalingga DC","Onsited":57,"LT_Trips":64,"Productivity":1.12},{"Origin DC":"Padang DC","Onsited":49,"LT_Trips":55,"Productivity":1.12},{"Origin DC":"Mantikulore DC","Onsited":47,"LT_Trips":46,"Productivity":0.98},{"Origin DC":"Cirebon DC","Onsited":52,"LT_Trips":46,"Productivity":0.88},{"Origin DC":"Jember DC","Onsited":40,"LT_Trips":41,"Productivity":1.02},{"Origin DC":"Bengkulu DC","Onsited":32,"LT_Trips":33,"Productivity":1.03},{"Origin DC":"Lubuk Linggau DC","Onsited":31,"LT_Trips":33,"Productivity":1.06},{"Origin DC":"Dumai DC","Onsited":29,"LT_Trips":32,"Productivity":1.1},{"Origin DC":"Kudus DC","Onsited":30,"LT_Trips":30,"Productivity":1.0},{"Origin DC":"Ngawi DC","Onsited":56,"LT_Trips":29,"Productivity":0.52},{"Origin DC":"Jambi 2 DC","Onsited":18,"LT_Trips":20,"Productivity":1.11},{"Origin DC":"Tegal DC","Onsited":20,"LT_Trips":20,"Productivity":1.0},{"Origin DC":"Surabaya DC","Onsited":24,"LT_Trips":17,"Productivity":0.71},{"Origin DC":"Banjarmasin DC","Onsited":19,"LT_Trips":17,"Productivity":0.89},{"Origin DC":"Balikpapan DC","Onsited":15,"LT_Trips":15,"Productivity":1.0},{"Origin DC":"Ketapang Kalbar DC","Onsited":13,"LT_Trips":13,"Productivity":1.0},{"Origin DC":"Rancaekek DC","Onsited":14,"LT_Trips":12,"Productivity":0.86},{"Origin DC":"Ngawi 2 DC","Onsited":12,"LT_Trips":12,"Productivity":1.0},{"Origin DC":"Malang DC","Onsited":11,"LT_Trips":11,"Productivity":1.0},{"Origin DC":"Maros DC","Onsited":17,"LT_Trips":11,"Productivity":0.65},{"Origin DC":"Kawalu DC","Onsited":11,"LT_Trips":10,"Productivity":0.91},{"Origin DC":"Pekanbaru DC","Onsited":7,"LT_Trips":9,"Productivity":1.29},{"Origin DC":"Badung DC","Onsited":7,"LT_Trips":7,"Productivity":1.0},{"Origin DC":"Siborong - Borong DC","Onsited":8,"LT_Trips":6,"Productivity":0.75},{"Origin DC":"Banyumas DC","Onsited":0,"LT_Trips":4,"Productivity":null},{"Origin DC":"Tasikmalaya DC","Onsited":5,"LT_Trips":4,"Productivity":0.8},{"Origin DC":"Pekalongan DC","Onsited":0,"LT_Trips":3,"Productivity":null},{"Origin DC":"Kebumen DC","Onsited":0,"LT_Trips":3,"Productivity":null},{"Origin DC":"Rancaekek 2 DC","Onsited":4,"LT_Trips":2,"Productivity":0.5},{"Origin DC":"Transit Point Sunter DC","Onsited":0,"LT_Trips":2,"Productivity":null},{"Origin DC":"Transit Point Sunter 2 DC","Onsited":0,"LT_Trips":2,"Productivity":null},{"Origin DC":"Sunter DC","Onsited":0,"LT_Trips":1,"Productivity":null},{"Origin DC":"Cakung DC","Onsited":0,"LT_Trips":1,"Productivity":null},{"Origin DC":"Transit Point Neglasari DC","Onsited":0,"LT_Trips":1,"Productivity":null},{"Origin DC":"Jakarta Return DC","Onsited":46,"LT_Trips":0,"Productivity":0.0},{"Origin DC":"Cinambo RDC","Onsited":12,"LT_Trips":0,"Productivity":0.0},{"Origin DC":"Semarang 5 DC","Onsited":33,"LT_Trips":0,"Productivity":0.0},{"Origin DC":"Semarang 4 DC","Onsited":14,"LT_Trips":0,"Productivity":0.0}],"by_date":[{"Date":"2026-07-12","Onsited":442,"LT_Trips":416,"Productivity":0.94},{"Date":"2026-07-13","Onsited":611,"LT_Trips":516,"Productivity":0.84},{"Date":"2026-07-14","Onsited":498,"LT_Trips":444,"Productivity":0.89},{"Date":"2026-07-15","Onsited":478,"LT_Trips":412,"Productivity":0.86},{"Date":"2026-07-16","Onsited":479,"LT_Trips":413,"Productivity":0.86},{"Date":"2026-07-17","Onsited":352,"LT_Trips":401,"Productivity":1.14},{"Date":"2026-07-18","Onsited":257,"LT_Trips":150,"Productivity":0.58}],"by_vendor_date":[{"Vendor":"ALP","Date":"2026-07-12","Onsited":4,"LT_Trips":0,"Productivity":0.0},{"Vendor":"ALP","Date":"2026-07-13","Onsited":1,"LT_Trips":0,"Productivity":0.0},{"Vendor":"ALP","Date":"2026-07-14","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"ALP","Date":"2026-07-16","Onsited":5,"LT_Trips":0,"Productivity":0.0},{"Vendor":"ALP","Date":"2026-07-17","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"ARSY","Date":"2026-07-12","Onsited":9,"LT_Trips":4,"Productivity":0.44},{"Vendor":"ARSY","Date":"2026-07-13","Onsited":14,"LT_Trips":8,"Productivity":0.57},{"Vendor":"ARSY","Date":"2026-07-14","Onsited":13,"LT_Trips":8,"Productivity":0.62},{"Vendor":"ARSY","Date":"2026-07-15","Onsited":11,"LT_Trips":8,"Productivity":0.73},{"Vendor":"ARSY","Date":"2026-07-16","Onsited":14,"LT_Trips":9,"Productivity":0.64},{"Vendor":"ARSY","Date":"2026-07-17","Onsited":11,"LT_Trips":14,"Productivity":1.27},{"Vendor":"ARSY","Date":"2026-07-18","Onsited":6,"LT_Trips":2,"Productivity":0.33},{"Vendor":"Abimanyu","Date":"2026-07-12","Onsited":0,"LT_Trips":1,"Productivity":null},{"Vendor":"GNU","Date":"2026-07-12","Onsited":0,"LT_Trips":6,"Productivity":null},{"Vendor":"Jeje","Date":"2026-07-12","Onsited":5,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-13","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-14","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-15","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-16","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-17","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Jeje","Date":"2026-07-18","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"KJM","Date":"2026-07-13","Onsited":12,"LT_Trips":8,"Productivity":0.67},{"Vendor":"KJM","Date":"2026-07-14","Onsited":7,"LT_Trips":9,"Productivity":1.29},{"Vendor":"KJM","Date":"2026-07-15","Onsited":7,"LT_Trips":7,"Productivity":1.0},{"Vendor":"KJM","Date":"2026-07-16","Onsited":7,"LT_Trips":7,"Productivity":1.0},{"Vendor":"KJM","Date":"2026-07-17","Onsited":7,"LT_Trips":7,"Productivity":1.0},{"Vendor":"KJM","Date":"2026-07-18","Onsited":5,"LT_Trips":1,"Productivity":0.2},{"Vendor":"KLI","Date":"2026-07-12","Onsited":5,"LT_Trips":4,"Productivity":0.8},{"Vendor":"KLI","Date":"2026-07-13","Onsited":8,"LT_Trips":8,"Productivity":1.0},{"Vendor":"KLI","Date":"2026-07-14","Onsited":7,"LT_Trips":6,"Productivity":0.86},{"Vendor":"KLI","Date":"2026-07-15","Onsited":9,"LT_Trips":9,"Productivity":1.0},{"Vendor":"KLI","Date":"2026-07-16","Onsited":9,"LT_Trips":8,"Productivity":0.89},{"Vendor":"KLI","Date":"2026-07-17","Onsited":6,"LT_Trips":7,"Productivity":1.17},{"Vendor":"KLI","Date":"2026-07-18","Onsited":4,"LT_Trips":2,"Productivity":0.5},{"Vendor":"Logisly","Date":"2026-07-14","Onsited":5,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Logisly","Date":"2026-07-15","Onsited":8,"LT_Trips":1,"Productivity":0.12},{"Vendor":"Logisly","Date":"2026-07-16","Onsited":6,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Logisly","Date":"2026-07-17","Onsited":7,"LT_Trips":1,"Productivity":0.14},{"Vendor":"Logisly","Date":"2026-07-18","Onsited":6,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Lynthaz","Date":"2026-07-12","Onsited":144,"LT_Trips":143,"Productivity":0.99},{"Vendor":"Lynthaz","Date":"2026-07-13","Onsited":190,"LT_Trips":158,"Productivity":0.83},{"Vendor":"Lynthaz","Date":"2026-07-14","Onsited":173,"LT_Trips":147,"Productivity":0.85},{"Vendor":"Lynthaz","Date":"2026-07-15","Onsited":171,"LT_Trips":142,"Productivity":0.83},{"Vendor":"Lynthaz","Date":"2026-07-16","Onsited":163,"LT_Trips":142,"Productivity":0.87},{"Vendor":"Lynthaz","Date":"2026-07-17","Onsited":126,"LT_Trips":132,"Productivity":1.05},{"Vendor":"Lynthaz","Date":"2026-07-18","Onsited":91,"LT_Trips":44,"Productivity":0.48},{"Vendor":"MTJ","Date":"2026-07-12","Onsited":8,"LT_Trips":9,"Productivity":1.12},{"Vendor":"MTJ","Date":"2026-07-13","Onsited":9,"LT_Trips":8,"Productivity":0.89},{"Vendor":"MTJ","Date":"2026-07-14","Onsited":9,"LT_Trips":9,"Productivity":1.0},{"Vendor":"MTJ","Date":"2026-07-15","Onsited":8,"LT_Trips":8,"Productivity":1.0},{"Vendor":"MTJ","Date":"2026-07-16","Onsited":7,"LT_Trips":8,"Productivity":1.14},{"Vendor":"MTJ","Date":"2026-07-17","Onsited":4,"LT_Trips":8,"Productivity":2.0},{"Vendor":"MTJ","Date":"2026-07-18","Onsited":4,"LT_Trips":5,"Productivity":1.25},{"Vendor":"PBI","Date":"2026-07-12","Onsited":4,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-13","Onsited":5,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-14","Onsited":3,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-15","Onsited":4,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-16","Onsited":5,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-17","Onsited":3,"LT_Trips":0,"Productivity":0.0},{"Vendor":"PBI","Date":"2026-07-18","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Panorama","Date":"2026-07-15","Onsited":3,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Panorama","Date":"2026-07-16","Onsited":3,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Panorama","Date":"2026-07-17","Onsited":2,"LT_Trips":0,"Productivity":0.0},{"Vendor":"Panorama","Date":"2026-07-18","Onsited":1,"LT_Trips":0,"Productivity":0.0},{"Vendor":"RPL","Date":"2026-07-12","Onsited":9,"LT_Trips":0,"Productivity":0.0},{"Vendor":"RPL","Date":"2026-07-13","Onsited":9,"LT_Trips":0,"Productivity":0.0},{"Vendor":"RPL","Date":"2026-07-14","Onsited":9,"LT_Trips":0,"Productivity":0.0},{"Vendor":"SYU","Date":"2026-07-12","Onsited":24,"LT_Trips":22,"Productivity":0.92},{"Vendor":"SYU","Date":"2026-07-13","Onsited":25,"LT_Trips":31,"Productivity":1.24},{"Vendor":"SYU","Date":"2026-07-14","Onsited":22,"LT_Trips":23,"Productivity":1.05},{"Vendor":"SYU","Date":"2026-07-15","Onsited":23,"LT_Trips":18,"Productivity":0.78},{"Vendor":"SYU","Date":"2026-07-16","Onsited":24,"LT_Trips":27,"Productivity":1.12},{"Vendor":"SYU","Date":"2026-07-17","Onsited":16,"LT_Trips":24,"Productivity":1.5},{"Vendor":"SYU","Date":"2026-07-18","Onsited":12,"LT_Trips":13,"Productivity":1.08},{"Vendor":"TSC","Date":"2026-07-12","Onsited":18,"LT_Trips":16,"Productivity":0.89},{"Vendor":"TSC","Date":"2026-07-13","Onsited":17,"LT_Trips":13,"Productivity":0.76},{"Vendor":"TSC","Date":"2026-07-14","Onsited":19,"LT_Trips":15,"Productivity":0.79},{"Vendor":"TSC","Date":"2026-07-15","Onsited":17,"LT_Trips":13,"Productivity":0.76},{"Vendor":"TSC","Date":"2026-07-16","Onsited":22,"LT_Trips":14,"Productivity":0.64},{"Vendor":"TSC","Date":"2026-07-17","Onsited":17,"LT_Trips":15,"Productivity":0.88},{"Vendor":"TSC","Date":"2026-07-18","Onsited":15,"LT_Trips":11,"Productivity":0.73},{"Vendor":"Unicorn","Date":"2026-07-12","Onsited":212,"LT_Trips":211,"Productivity":1.0},{"Vendor":"Unicorn","Date":"2026-07-13","Onsited":319,"LT_Trips":282,"Productivity":0.88},{"Vendor":"Unicorn","Date":"2026-07-14","Onsited":227,"LT_Trips":227,"Productivity":1.0},{"Vendor":"Unicorn","Date":"2026-07-15","Onsited":215,"LT_Trips":206,"Productivity":0.96},{"Vendor":"Unicorn","Date":"2026-07-16","Onsited":212,"LT_Trips":198,"Productivity":0.93},{"Vendor":"Unicorn","Date":"2026-07-17","Onsited":149,"LT_Trips":193,"Productivity":1.3},{"Vendor":"Unicorn","Date":"2026-07-18","Onsited":109,"LT_Trips":72,"Productivity":0.66}],"detail":[{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":44,"Onsited":53,"Productivity":0.83},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":44,"Onsited":52,"Productivity":0.85},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":42,"Onsited":53,"Productivity":0.79},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":41,"Onsited":51,"Productivity":0.8},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":41,"Onsited":50,"Productivity":0.82},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":39,"Onsited":41,"Productivity":0.95},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":25,"Onsited":20,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":23,"Onsited":23,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":22,"Onsited":22,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":22,"Onsited":21,"Productivity":1.05},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":21,"Onsited":20,"Productivity":1.05},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":21,"Onsited":22,"Productivity":0.95},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":21,"Onsited":22,"Productivity":0.95},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":21,"Onsited":21,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":20,"Onsited":20,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":20,"Onsited":28,"Productivity":0.71},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":20,"Onsited":22,"Productivity":0.91},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":20,"Onsited":32,"Productivity":0.62},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":20,"Onsited":14,"Productivity":1.43},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":20,"Onsited":15,"Productivity":1.33},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":19,"Onsited":15,"Productivity":1.27},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":19,"Onsited":15,"Productivity":1.27},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":19,"Onsited":22,"Productivity":0.86},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":19,"Onsited":23,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":18,"Onsited":20,"Productivity":0.9},{"Vendor":"Lynthaz","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":18,"Onsited":29,"Productivity":0.62},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":18,"Onsited":15,"Productivity":1.2},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":17,"Onsited":15,"Productivity":1.13},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":17,"Onsited":21,"Productivity":0.81},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":17,"Onsited":22,"Productivity":0.77},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":17,"Onsited":22,"Productivity":0.77},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":17,"Onsited":19,"Productivity":0.89},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":16,"Onsited":12,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":16,"Onsited":15,"Productivity":1.07},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":16,"Onsited":19,"Productivity":0.84},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":15,"Onsited":11,"Productivity":1.36},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":15,"Onsited":25,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":15,"Onsited":15,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":15,"Onsited":12,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":15,"Onsited":21,"Productivity":0.71},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":15,"Onsited":15,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":15,"Onsited":10,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":15,"Onsited":21,"Productivity":0.71},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":14,"Onsited":27,"Productivity":0.52},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":14,"Onsited":7,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":14,"Onsited":10,"Productivity":1.4},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":14,"Onsited":14,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":14,"Onsited":13,"Productivity":1.08},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":14,"Onsited":26,"Productivity":0.54},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":14,"Onsited":28,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":13,"Onsited":16,"Productivity":0.81},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":13,"Onsited":12,"Productivity":1.08},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":13,"Onsited":12,"Productivity":1.08},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":12,"Onsited":9,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":12,"Onsited":17,"Productivity":0.71},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":12,"Onsited":20,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":12,"Onsited":12,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":12,"Onsited":17,"Productivity":0.71},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":12,"Onsited":8,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":11,"Onsited":8,"Productivity":1.38},{"Vendor":"Lynthaz","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":11,"Onsited":12,"Productivity":0.92},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":11,"Onsited":11,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":11,"Onsited":8,"Productivity":1.38},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":11,"Onsited":12,"Productivity":0.92},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":11,"Onsited":6,"Productivity":1.83},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":11,"Onsited":10,"Productivity":1.1},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":11,"Onsited":10,"Productivity":1.1},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":10,"Onsited":7,"Productivity":1.43},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":10,"Onsited":11,"Productivity":0.91},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":10,"Onsited":10,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":10,"Onsited":11,"Productivity":0.91},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":10,"Onsited":11,"Productivity":0.91},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":10,"Onsited":11,"Productivity":0.91},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":10,"Onsited":7,"Productivity":1.43},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":10,"Onsited":9,"Productivity":1.11},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":10,"Onsited":14,"Productivity":0.71},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":10,"Onsited":11,"Productivity":0.91},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":10,"Onsited":8,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":10,"Onsited":8,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":10,"Onsited":10,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":9,"Onsited":5,"Productivity":1.8},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":9,"Onsited":6,"Productivity":1.5},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":9,"Onsited":9,"Productivity":1.0},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":9,"Onsited":8,"Productivity":1.12},{"Vendor":"TSC","Origin DC":"Banyumas 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":9,"Onsited":10,"Productivity":0.9},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":9,"Onsited":6,"Productivity":1.5},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":9,"Onsited":12,"Productivity":0.75},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":9,"Onsited":8,"Productivity":1.12},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":9,"Onsited":9,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":9,"Onsited":6,"Productivity":1.5},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":9,"Onsited":6,"Productivity":1.5},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":9,"Onsited":8,"Productivity":1.12},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":9,"Onsited":10,"Productivity":0.9},{"Vendor":"Unicorn","Origin DC":"Pekanbaru DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":9,"Onsited":7,"Productivity":1.29},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":9,"Onsited":9,"Productivity":1.0},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":10,"Productivity":0.8},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":8,"Onsited":4,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":7,"Productivity":1.14},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":5,"Productivity":1.6},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":8,"Onsited":8,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":8,"Onsited":8,"Productivity":1.0},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":8,"Onsited":9,"Productivity":0.89},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":8,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":8,"Onsited":8,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":8,"Onsited":4,"Productivity":2.0},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":8,"Onsited":6,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":9,"Productivity":0.89},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":8,"Onsited":5,"Productivity":1.6},{"Vendor":"Unicorn","Origin DC":"Palembang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":8,"Onsited":5,"Productivity":1.6},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":8,"Onsited":10,"Productivity":0.8},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":8,"Onsited":8,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":9,"Productivity":0.89},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":8,"Onsited":7,"Productivity":1.14},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":8,"Onsited":7,"Productivity":1.14},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"ARSY","Origin DC":"Malang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":3,"Productivity":2.33},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":7,"Onsited":9,"Productivity":0.78},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":5,"Productivity":1.4},{"Vendor":"Unicorn","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":7,"Onsited":10,"Productivity":0.7},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":7,"Onsited":5,"Productivity":1.4},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":7,"Onsited":7,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":4,"Productivity":1.75},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":7,"Onsited":10,"Productivity":0.7},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":9,"Productivity":0.78},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":7,"Onsited":7,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":9,"Productivity":0.78},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":7,"Onsited":8,"Productivity":0.88},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":9,"Productivity":0.78},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":7,"Onsited":10,"Productivity":0.7},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":7,"Onsited":6,"Productivity":1.17},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":6,"Onsited":4,"Productivity":1.5},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":9,"Productivity":0.67},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":8,"Productivity":0.75},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":8,"Productivity":0.75},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":6,"Onsited":19,"Productivity":0.32},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":6,"Onsited":8,"Productivity":0.75},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":9,"Productivity":0.67},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":9,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":6,"Onsited":3,"Productivity":2.0},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"SYU","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":10,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":10,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":6,"Onsited":2,"Productivity":3.0},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":6,"Onsited":6,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":6,"Onsited":4,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":6,"Onsited":7,"Productivity":0.86},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"MTJ","Origin DC":"Padang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"Lynthaz","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lampung 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":8,"Productivity":0.62},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":7,"Productivity":0.71},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"Lynthaz","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":11,"Productivity":0.45},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":7,"Productivity":0.71},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":7,"Productivity":0.71},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":5,"Onsited":3,"Productivity":1.67},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Cinambo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":5,"Onsited":8,"Productivity":0.62},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":6,"Productivity":0.83},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":4,"Productivity":1.25},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":5,"Onsited":5,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":1,"Productivity":4.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":4,"Productivity":1.0},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":4,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":4,"Onsited":3,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":4,"Onsited":3,"Productivity":1.33},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":4,"Onsited":1,"Productivity":4.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":3,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":3,"Productivity":1.33},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Lynthaz","Origin DC":"Banyumas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":4,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":4,"Onsited":4,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Aceh DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":4,"Onsited":4,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Percut Sei Tuan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":4,"Onsited":5,"Productivity":0.8},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":4,"Onsited":3,"Productivity":1.33},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":4,"Onsited":2,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":4,"Productivity":0.75},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kebumen DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":0,"Productivity":null},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":3,"Onsited":1,"Productivity":3.0},{"Vendor":"Unicorn","Origin DC":"Lubuk Linggau DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":1,"Productivity":3.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Mantikulore DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":6,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Dumai DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":4,"Productivity":0.75},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Bandung Kopo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"Lynthaz","Origin DC":"Pekalongan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":3,"Onsited":4,"Productivity":0.75},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":3,"Onsited":4,"Productivity":0.75},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":4,"Productivity":0.75},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Benowo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Bengkulu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":3,"Onsited":2,"Productivity":1.5},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":3,"Onsited":5,"Productivity":0.6},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":3,"Onsited":3,"Productivity":1.0},{"Vendor":"ARSY","Origin DC":"Malang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"ARSY","Origin DC":"Malang DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":6,"Productivity":0.33},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rungkut DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":4,"Productivity":0.5},{"Vendor":"GNU","Origin DC":"Transit Point Sunter DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Tasikmalaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Lynthaz","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Balikpapan DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":4,"Productivity":0.5},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":4,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Medan DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":1,"Productivity":2.0},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":1,"Productivity":2.0},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Tasikmalaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":0,"Productivity":null},{"Vendor":"GNU","Origin DC":"Transit Point Sunter 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":5,"Productivity":0.4},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-18","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"SYU","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-13","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":2,"Onsited":3,"Productivity":0.67},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":2,"Onsited":2,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":3,"Productivity":0.33},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Abimanyu","Origin DC":"Transit Point Neglasari DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":0,"Productivity":null},{"Vendor":"GNU","Origin DC":"Cakung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Purbalingga DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"GNU","Origin DC":"Sunter DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"KJM","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"TSC","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Ngawi 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Tegal DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":0,"Productivity":null},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":3,"Productivity":0.33},{"Vendor":"Logisly","Origin DC":"Kediri DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Jambi 2 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Semarang DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":5,"Productivity":0.2},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":5,"Productivity":0.2},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Lynthaz","Origin DC":"Jember DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":1,"Onsited":0,"Productivity":null},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Ketapang Kalbar DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Logisly","Origin DC":"Kediri DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Lynthaz","Origin DC":"Badung DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"Unicorn","Origin DC":"Rancaekek 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"TSC","Origin DC":"Berbah DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":1,"Productivity":1.0},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":1,"Onsited":2,"Productivity":0.5},{"Vendor":"ARSY","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ALP","Origin DC":"Medan DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"ALP","Origin DC":"Medan DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ALP","Origin DC":"Medan DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"ALP","Origin DC":"Medan DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Kudus DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ALP","Origin DC":"Medan DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Lynthaz","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":13,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Lynthaz","Origin DC":"Ngawi DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"TSC","Origin DC":"Jakarta Return DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Siborong - Borong DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Lynthaz","Origin DC":"Kediri DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Benowo 3 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Banjarmasin DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Lynthaz","Origin DC":"Sidoarjo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Maros DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo RDC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"SYU","Origin DC":"Kawalu DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Kudus DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Semarang 5 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Semarang 5 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Kediri DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Semarang 5 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Semarang 5 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Semarang 5 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":6,"Productivity":0.0},{"Vendor":"SYU","Origin DC":"Arjawinangun DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Medan Amplas DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo RDC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek 2 DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"KJM","Origin DC":"Cirebon DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"Logisly","Origin DC":"Kediri DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"KLI","Origin DC":"Surabaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 5 DC","Vehicle Type":"BLINDVAN (4WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Jeje","Origin DC":"Semarang 4 DC","Vehicle Type":"CDE LONG (4WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Solo DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"PBI","Origin DC":"Jakarta Return DC","Vehicle Type":"FUSO STD (6WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo RDC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":4,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"RPL","Origin DC":"Cinambo DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":5,"Productivity":0.0},{"Vendor":"Panorama","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"Panorama","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-17","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Panorama","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Panorama","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-16","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Semarang 5 DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-15","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Semarang 5 DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Semarang 5 DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":1,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Semarang 5 DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-12","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-14","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"ARSY","Origin DC":"Ngawi DC","Vehicle Type":"TRONTON (10WH)","Date":"2026-07-13","LT_Trips":0,"Onsited":3,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Rancaekek DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":2,"Productivity":0.0},{"Vendor":"Unicorn","Origin DC":"Tasikmalaya DC","Vehicle Type":"CDD LONG (6WH)","Date":"2026-07-18","LT_Trips":0,"Onsited":1,"Productivity":0.0}]},"ordered_vs_onsite":[],"ordered_vs_onsite_daily":{"dates":["2026-07-12","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-18"],"rows":[]},"generated_at":"2026-07-18T17:48:05.635329Z","window_days":7,"order_sheet_available":false,"errors":[{"source":"DR order sheet","message":"Could not be read (likely a sharing/permission issue for the service account). Ordered-vs-onsited figures are unavailable; onsited-only figures elsewhere are unaffected."}]};
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (RAW.errors && RAW.errors.length) {
+    document.getElementById('errorBanner').style.display = 'block';
+    document.getElementById('errorList').innerHTML = RAW.errors.map(function (e) {
+      return '<li><b>' + e.source + ':</b> ' + e.message + '</li>';
+    }).join('');
+    if (!RAW.order_sheet_available) {
+      document.getElementById('ovoSubtxt').innerHTML =
+        '<b style="color:#c0392b">Unavailable right now</b> &mdash; the DR order sheet could not be read ' +
+        '(likely a permissions issue for the service account this pipeline runs under). Onsited-only figures elsewhere ' +
+        'in this dashboard are unaffected.';
+    }
+  }
+
+  document.getElementById('headerWindowTxt').textContent =
+    'rolling ' + RAW.window_days + '-day window, generated ' + new Date(RAW.generated_at).toLocaleString();
+  document.getElementById('generatedAtTxt').textContent =
+    new Date(RAW.generated_at).toLocaleString();
+
+  initDashboard();
+});
+
+// ── VENDOR COLORS ─────────────────────────────────────────────────────────────
+const VENDOR_COLORS = {
+  Lynthaz:'#e94560', Unicorn:'#0f3460', Abimanyu:'#495057', GNU:'#f4a261',
+  TSC:'#06d6a0', ARSY:'#8338ec', Jeje:'#3a86ff', SYU:'#fb5607', RPL:'#c9184a',
+  KLI:'#ffbe0b', Logisly:'#2a9d8f', MTJ:'#7209b7', MTS:'#6d6875', PBI:'#d62828',
+  TSF:'#457b9d', ALP:'#80b918', KJM:'#ff006e', Panorama:'#1b4332'
+};
+const PALETTE = ['#0f3460','#e94560','#06d6a0','#f4a261','#8338ec','#3a86ff','#fb5607','#ffbe0b','#2a9d8f','#7209b7'];
+function vendorColor(v){ return VENDOR_COLORS[v] || '#999'; }
+
+// ── CSV EXPORT (Excel opens .csv directly) ────────────────────────────────────
+function downloadCSV(filename, headers, rows) {
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    v = String(v);
+    if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  };
+  const lines = [headers.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
+  const csv = String.fromCharCode(0xFEFF) + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let DATES = [];
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+function initDashboard() {
+  DATES = [...new Set(RAW.by_dc_date.map(d=>d.Date))].sort();
+
+  document.getElementById('c-trips').textContent = RAW.summary.total_trips.toLocaleString();
+  document.getElementById('c-vendors').textContent = RAW.summary.total_vendors;
+  document.getElementById('c-dcs').textContent = RAW.summary.total_dcs;
+  document.getElementById('c-days').textContent = DATES.length;
+  document.getElementById('dateRangeTxt').textContent = RAW.summary.date_min + ' to ' + RAW.summary.date_max;
+  document.getElementById('windowDaysTxt').textContent = RAW.productivity.dates.length;
+
+  buildVendorChart();
+  buildDCChart();
+  buildTrendChart('top10');
+  buildDcDateTable();
+  buildProductivityCards();
+  buildDcProductivityChart();
+  buildProdDetailTable();
+  buildProdByDcDaily();
+  buildProdByVendorDaily();
+  buildOrderedVsOnsiteTable();
+
+  document.getElementById('fDcSearch').addEventListener('input', renderDcDateBody);
+  document.getElementById('trendMode').addEventListener('change', e => buildTrendChart(e.target.value));
+}
+
+// ── DC x DATE TABLE ───────────────────────────────────────────────────────────
+let dcDateRows = [];
+let dcSortCol = 'Total', dcSortAsc = false;
+
+function buildDcDateTable() {
+  const map = {};
+  RAW.by_dc_date.forEach(r => {
+    if (!map[r['Origin DC']]) map[r['Origin DC']] = {};
+    map[r['Origin DC']][r.Date] = r.Trips;
+  });
+  dcDateRows = Object.keys(map).map(dc => {
+    const row = { 'Origin DC': dc };
+    let total = 0;
+    DATES.forEach(dt => { const v = map[dc][dt] || 0; row[dt] = v; total += v; });
+    row.Total = total;
+    return row;
+  });
+
+  const headRow = document.getElementById('dcDateHeadRow');
+  let headHtml = `<th onclick="dcSortBy('Origin DC')">Origin DC <span class="sort-icon" id="dcs-Origin DC">↕</span></th>`;
+  DATES.forEach(dt => { headHtml += `<th onclick="dcSortBy('${dt}')" style="text-align:right">${dt} <span class="sort-icon" id="dcs-${dt}">↕</span></th>`; });
+  headHtml += `<th onclick="dcSortBy('Total')" style="text-align:right">Total <span class="sort-icon" id="dcs-Total">↓</span></th>`;
+  headRow.innerHTML = headHtml;
+
+  const footRow = document.getElementById('dcDateFootRow');
+  let footHtml = `<td>Grand Total</td>`;
+  DATES.forEach(dt => {
+    const sum = dcDateRows.reduce((s,r)=>s+(r[dt]||0),0);
+    footHtml += `<td class="num">${sum}</td>`;
+  });
+  const grand = dcDateRows.reduce((s,r)=>s+r.Total,0);
+  footHtml += `<td class="num">${grand}</td>`;
+  footRow.innerHTML = footHtml;
+
+  renderDcDateBody();
+}
+
+function dcSortBy(col) {
+  if (dcSortCol === col) { dcSortAsc = !dcSortAsc; }
+  else { dcSortCol = col; dcSortAsc = col === 'Origin DC'; }
+  document.querySelectorAll('#dcDateHeadRow .sort-icon').forEach(el => el.textContent='↕');
+  const icon = document.getElementById('dcs-'+col);
+  if (icon) icon.textContent = dcSortAsc ? '↑' : '↓';
+  renderDcDateBody();
+}
+
+let dcDateFilteredRows = [];
+
+function renderDcDateBody() {
+  const s = document.getElementById('fDcSearch').value.toLowerCase();
+  let rows = dcDateRows.filter(r => !s || r['Origin DC'].toLowerCase().includes(s));
+  rows.sort((a,b) => {
+    let av = a[dcSortCol], bv = b[dcSortCol];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return dcSortAsc ? (av > bv ? 1:-1) : (av < bv ? 1:-1);
+  });
+  dcDateFilteredRows = rows;
+  document.getElementById('dcResultCount').textContent = `${rows.length} of ${dcDateRows.length} DCs`;
+
+  const tbody = document.getElementById('dcDateBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${DATES.length+2}" class="no-data">No matching Origin DC.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    let html = `<tr><td>${r['Origin DC']}</td>`;
+    DATES.forEach(dt => { html += `<td class="num">${r[dt] ? r[dt] : '–'}</td>`; });
+    html += `<td class="num" style="font-weight:800">${r.Total}</td></tr>`;
+    return html;
+  }).join('');
+}
+
+function exportDcDate() {
+  const headers = ['Origin DC', ...DATES, 'Total'];
+  const rows = dcDateFilteredRows.map(r => [r['Origin DC'], ...DATES.map(dt => r[dt] || 0), r.Total]);
+  downloadCSV('trips_by_day_per_dc_per_day.csv', headers, rows);
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────────────────
+function buildVendorChart() {
+  const vendors = RAW.by_vendor.filter(v=>v.Trips > 0).sort((a,b)=>b.Trips-a.Trips);
+  new Chart(document.getElementById('chartVendor'), {
+    type: 'bar',
+    data: {
+      labels: vendors.map(v=>v.Vendor),
+      datasets: [{
+        label: 'Trips',
+        data: vendors.map(v=>v.Trips),
+        backgroundColor: vendors.map(v=>vendorColor(v.Vendor)),
+        borderRadius: 5
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { ticks:{ font:{size:10} } },
+        y: { ticks:{ font:{size:11} }, beginAtZero:true }
+      }
+    }
+  });
+}
+
+function buildDCChart() {
+  const dcs = RAW.by_dc.slice(0,20);
+  new Chart(document.getElementById('chartDC'), {
+    type: 'bar',
+    data: {
+      labels: dcs.map(d=>d['Origin DC'].replace(' DC','').replace('Transit Point ','TP ')),
+      datasets: [{
+        label: 'Trips',
+        data: dcs.map(d=>d.Trips),
+        backgroundColor: '#0f3460cc',
+        borderRadius: 4
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { beginAtZero:true, ticks:{ font:{size:10} } },
+        y: { ticks:{ font:{size:10} } }
+      }
+    }
+  });
+}
+
+// ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
+function buildProductivityCards() {
+  const p = RAW.productivity;
+  document.getElementById('p-units').textContent = p.total_onsited.toLocaleString();
+  document.getElementById('p-trips').textContent = p.total_trips.toLocaleString();
+  document.getElementById('p-avg').textContent = (p.overall_productivity === null ? 0 : p.overall_productivity).toFixed(2);
+  document.getElementById('p-avgday').textContent = Math.round(p.total_onsited / p.dates.length).toLocaleString();
+}
+
+// Shared cell formatter: "LT / Onsited -> Productivity" used by both pivot tables below
+function fmtCell(c) {
+  if (!c || (c.Onsited === 0 && c.LT_Trips === 0)) return '–';
+  const prod = c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '<span style="color:#aaa">–</span>';
+  return `${c.LT_Trips} / ${c.Onsited} &rarr; <b>${prod}</b>`;
+}
+
+// Groups RAW.productivity.detail by `groupField` x Date, optionally restricted to one Vehicle Type
+function pivotByField(groupField, vehicleType) {
+  const dates = RAW.productivity.dates;
+  const src = RAW.productivity.detail.filter(r => !vehicleType || r['Vehicle Type'] === vehicleType);
+  const map = {};
+  src.forEach(r => {
+    const k = r[groupField];
+    if (!map[k]) map[k] = {};
+    if (!map[k][r.Date]) map[k][r.Date] = { Onsited: 0, LT_Trips: 0 };
+    map[k][r.Date].Onsited += r.Onsited;
+    map[k][r.Date].LT_Trips += r.LT_Trips;
+  });
+  let rows = Object.keys(map).map(key => {
+    const row = { key };
+    let totO = 0, totT = 0;
+    dates.forEach(dt => {
+      const c = map[key][dt] || { Onsited: 0, LT_Trips: 0 };
+      row[dt] = c; totO += c.Onsited; totT += c.LT_Trips;
+    });
+    row.total = { Onsited: totO, LT_Trips: totT };
+    return row;
+  });
+  rows.sort((a, b) => b.total.LT_Trips - a.total.LT_Trips);
+  return { dates, rows };
+}
+
+function pivotFootRow(rows, dates) {
+  let footHtml = '';
+  dates.forEach(dt => {
+    const o = rows.reduce((s, r) => s + r[dt].Onsited, 0);
+    const t = rows.reduce((s, r) => s + r[dt].LT_Trips, 0);
+    footHtml += `<td class="num">${fmtCell({ Onsited: o, LT_Trips: t })}</td>`;
+  });
+  const go = rows.reduce((s, r) => s + r.total.Onsited, 0);
+  const gt = rows.reduce((s, r) => s + r.total.LT_Trips, 0);
+  footHtml += `<td class="num">${fmtCell({ Onsited: go, LT_Trips: gt })}</td>`;
+  return footHtml;
+}
+
+// Shared CSV export for the two pivot tables below (DC-per-day, Vendor-per-day):
+// expands each date into 3 numeric columns rather than the combined display string
+function exportPivotCSV(filename, rowLabel, rows, dates) {
+  const headers = [rowLabel];
+  dates.forEach(dt => headers.push(dt + ' Onsited', dt + ' LT Trips', dt + ' Productivity'));
+  headers.push('Total Onsited', 'Total LT Trips', 'Total Productivity');
+  const csvRows = rows.map(r => {
+    const row = [r.key];
+    dates.forEach(dt => {
+      const c = r[dt] || { Onsited: 0, LT_Trips: 0 };
+      row.push(c.Onsited, c.LT_Trips, c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '');
+    });
+    row.push(r.total.Onsited, r.total.LT_Trips, r.total.Onsited > 0 ? (r.total.LT_Trips / r.total.Onsited).toFixed(2) : '');
+    return row;
+  });
+  downloadCSV(filename, headers, csvRows);
+}
+
+// ── PRODUCTIVITY TREND CHART (Top 10 DCs, line = DC, x = date) ───────────────
+let dcProductivityChart = null;
+function buildDcProductivityChart() {
+  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
+  const sel = document.getElementById('dcTrendVehicleFilter');
+  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  sel.addEventListener('change', renderDcProductivityChart);
+  renderDcProductivityChart();
+}
+
+function renderDcProductivityChart() {
+  const vt = document.getElementById('dcTrendVehicleFilter').value;
+  const { dates, rows } = pivotByField('Origin DC', vt);
+  const top10 = rows.slice(0, 10);
+
+  const datasets = top10.map((r, i) => ({
+    label: r.key.replace(' DC', '').replace('Transit Point ', 'TP '),
+    data: dates.map(dt => r[dt].Onsited > 0 ? Number((r[dt].LT_Trips / r[dt].Onsited).toFixed(2)) : null),
+    borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: PALETTE[i % PALETTE.length] + '33',
+    spanGaps: true,
+    tension: 0.25, fill: false
+  }));
+
+  if (dcProductivityChart) dcProductivityChart.destroy();
+  dcProductivityChart = new Chart(document.getElementById('chartDcProductivity'), {
+    type: 'line',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, title: { display: true, text: 'Productivity (Trips/Onsited)' }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ── 2. Productivity per DC, per Day ───────────────────────────────────────────
+function buildProdByDcDaily() {
+  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
+  const sel = document.getElementById('dcVehicleFilter');
+  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  sel.addEventListener('change', renderProdByDcDaily);
+  document.getElementById('pdcSearch').addEventListener('input', renderProdByDcDaily);
+  renderProdByDcDaily();
+}
+
+let pdcFilteredRows = [], pdcDates = [];
+
+function renderProdByDcDaily() {
+  const vt = document.getElementById('dcVehicleFilter').value;
+  const search = document.getElementById('pdcSearch').value.toLowerCase();
+  const { dates, rows: allRows } = pivotByField('Origin DC', vt);
+  const rows = allRows.filter(r => !search || r.key.toLowerCase().includes(search));
+  pdcFilteredRows = rows;
+  pdcDates = dates;
+
+  document.getElementById('pdcResultCount').textContent = `${rows.length} of ${allRows.length} DCs`;
+
+  const headRow = document.getElementById('pdcHeadRow');
+  let headHtml = '<th>Origin DC</th>';
+  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
+  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
+  headRow.innerHTML = headHtml;
+
+  const tbody = document.getElementById('pdcBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${dates.length + 2}" class="no-data">No matching Origin DC.</td></tr>`;
+  } else {
+    tbody.innerHTML = rows.map(r => {
+      let html = `<tr><td>${r.key}</td>`;
+      dates.forEach(dt => { html += `<td class="num">${fmtCell(r[dt])}</td>`; });
+      html += `<td class="num" style="font-weight:800">${fmtCell(r.total)}</td></tr>`;
+      return html;
+    }).join('');
+  }
+
+  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates);
+}
+
+function exportProdByDcDaily() {
+  exportPivotCSV('productivity_by_dc_per_day.csv', 'Origin DC', pdcFilteredRows, pdcDates);
+}
+
+// ── 3. Productivity per Vendor, per Day ───────────────────────────────────────
+function buildProdByVendorDaily() {
+  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
+  const sel = document.getElementById('vendorVehicleFilter');
+  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  sel.addEventListener('change', renderProdByVendorDaily);
+  renderProdByVendorDaily();
+}
+
+let pvFilteredRows = [], pvDates = [];
+
+function renderProdByVendorDaily() {
+  const vt = document.getElementById('vendorVehicleFilter').value;
+  const { dates, rows } = pivotByField('Vendor', vt);
+  pvFilteredRows = rows;
+  pvDates = dates;
+
+  const headRow = document.getElementById('pvHeadRow');
+  let headHtml = '<th>Vendor</th>';
+  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
+  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
+  headRow.innerHTML = headHtml;
+
+  const tbody = document.getElementById('pvBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${dates.length + 2}" class="no-data">No data for this vehicle type.</td></tr>`;
+  } else {
+    tbody.innerHTML = rows.map(r => {
+      const c = vendorColor(r.key);
+      let html = `<tr><td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.key}</span></td>`;
+      dates.forEach(dt => { html += `<td class="num">${fmtCell(r[dt])}</td>`; });
+      html += `<td class="num" style="font-weight:800">${fmtCell(r.total)}</td></tr>`;
+      return html;
+    }).join('');
+  }
+
+  document.getElementById('pvFootRow').innerHTML = '<td>All Vendors</td>' + pivotFootRow(rows, dates);
+}
+
+function exportProdByVendorDaily() {
+  exportPivotCSV('productivity_by_vendor_per_day.csv', 'Vendor', pvFilteredRows, pvDates);
+}
+
+// ── VENDOR x DC x DATE DETAIL TABLE ───────────────────────────────────────────
+let pFiltered = [];
+let pSortCol = 'LT_Trips', pSortAsc = false;
+let pPage = 1;
+const P_PAGE_SIZE = 25;
+
+function buildProdDetailTable() {
+  pFiltered = [...RAW.productivity.detail];
+  const vendors = [...new Set(RAW.productivity.detail.map(d=>d.Vendor))].sort();
+  const vehicles = [...new Set(RAW.productivity.detail.map(d=>d['Vehicle Type']))].sort();
+  const dates = RAW.productivity.dates;
+
+  const vs = document.getElementById('fpVendor');
+  vendors.forEach(v=>{ let o=document.createElement('option'); o.value=v; o.textContent=v; vs.appendChild(o); });
+
+  const vhs = document.getElementById('fpVehicle');
+  vehicles.forEach(vh=>{ let o=document.createElement('option'); o.value=vh; o.textContent=vh; vhs.appendChild(o); });
+
+  const ds = document.getElementById('fpDate');
+  dates.forEach(dt=>{ let o=document.createElement('option'); o.value=dt; o.textContent=dt; ds.appendChild(o); });
+
+  document.getElementById('fpVendor').addEventListener('change', applyProdFilters);
+  document.getElementById('fpVehicle').addEventListener('change', applyProdFilters);
+  document.getElementById('fpDate').addEventListener('change', applyProdFilters);
+  document.getElementById('fpSearch').addEventListener('input', applyProdFilters);
+
+  pRenderTable();
+}
+
+function applyProdFilters() {
+  const v = document.getElementById('fpVendor').value;
+  const vh = document.getElementById('fpVehicle').value;
+  const dt = document.getElementById('fpDate').value;
+  const s = document.getElementById('fpSearch').value.toLowerCase();
+
+  pFiltered = RAW.productivity.detail.filter(r =>
+    (!v || r.Vendor===v) &&
+    (!vh || r['Vehicle Type']===vh) &&
+    (!dt || r.Date===dt) &&
+    (!s || r['Origin DC'].toLowerCase().includes(s))
+  );
+  pPage = 1;
+  pRenderTable();
+}
+
+function resetProdFilters() {
+  document.getElementById('fpVendor').value = '';
+  document.getElementById('fpVehicle').value = '';
+  document.getElementById('fpDate').value = '';
+  document.getElementById('fpSearch').value = '';
+  applyProdFilters();
+}
+
+function pSortBy(col) {
+  if (pSortCol === col) { pSortAsc = !pSortAsc; }
+  else { pSortCol = col; pSortAsc = col === 'Vendor' || col === 'Origin DC' || col === 'Date'; }
+
+  document.querySelectorAll('#pDetailTableBody').forEach(()=>{});
+  document.querySelectorAll('[id^="ps-"]').forEach(el => el.textContent='↕');
+  const icon = document.getElementById('ps-'+col);
+  if (icon) icon.textContent = pSortAsc ? '↑' : '↓';
+
+  pFiltered.sort((a,b) => {
+    let av = a[col], bv = b[col];
+    if (av === null || av === undefined) av = -Infinity;
+    if (bv === null || bv === undefined) bv = -Infinity;
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return pSortAsc ? (av > bv ? 1:-1) : (av < bv ? 1:-1);
+  });
+  pPage = 1;
+  pRenderTable();
+}
+
+function pRenderTable() {
+  const tbody = document.getElementById('pDetailTableBody');
+  const total = pFiltered.length;
+  const pages = Math.ceil(total / P_PAGE_SIZE);
+  const start = (pPage-1)*P_PAGE_SIZE;
+  const rows = pFiltered.slice(start, start+P_PAGE_SIZE);
+
+  document.getElementById('pResultCount').textContent = `${total} rows`;
+  document.getElementById('pPageInfo').textContent = `Page ${pPage} of ${Math.max(pages,1)}`;
+  document.getElementById('pBtnPrev').disabled = pPage <= 1;
+  document.getElementById('pBtnNext').disabled = pPage >= pages;
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="no-data">No data matches your filters.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const c = vendorColor(r.Vendor);
+    const prodTxt = r.Productivity === null || r.Productivity === undefined ? '–' : r.Productivity.toFixed(2);
+    return `<tr>
+      <td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.Vendor}</span></td>
+      <td>${r['Origin DC']}</td>
+      <td>${r['Vehicle Type']}</td>
+      <td>${r.Date}</td>
+      <td class="num">${r.Onsited}</td>
+      <td class="num">${r.LT_Trips}</td>
+      <td class="num" style="font-weight:800">${prodTxt}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportProdDetail() {
+  const headers = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date', 'Daily Onsited', 'Daily LT using DR', 'Productivity'];
+  const rows = pFiltered.map(r => [r.Vendor, r['Origin DC'], r['Vehicle Type'], r.Date, r.Onsited, r.LT_Trips,
+    r.Productivity === null || r.Productivity === undefined ? '' : r.Productivity]);
+  downloadCSV('vendor_dc_daily_onsited_lt.csv', headers, rows);
+}
+
+function pChangePage(dir) {
+  pPage += dir;
+  pRenderTable();
+}
+
+let trendChart = null;
+function buildTrendChart(mode) {
+  if (trendChart) trendChart.destroy();
+  let datasets = [];
+  if (mode === 'top10') {
+    const top10 = RAW.by_dc.slice(0,10).map(d=>d['Origin DC']);
+    datasets = top10.map((dc,i) => {
+      const rows = RAW.by_dc_date.filter(r=>r['Origin DC']===dc);
+      return {
+        label: dc.replace(' DC','').replace('Transit Point ','TP '),
+        data: DATES.map(dt => { const f = rows.find(r=>r.Date===dt); return f ? f.Trips : 0; }),
+        borderColor: PALETTE[i%PALETTE.length],
+        backgroundColor: PALETTE[i%PALETTE.length]+'33',
+        tension: 0.25, fill:false
+      };
+    });
+  } else {
+    const vendors = RAW.by_vendor.filter(v=>v.Trips>0).map(v=>v.Vendor);
+    datasets = vendors.map(v => {
+      const rows = RAW.by_vendor_date.filter(r=>r.Vendor===v);
+      return {
+        label: v,
+        data: DATES.map(dt => { const f = rows.find(r=>r.Date===dt); return f ? f.Trips : 0; }),
+        borderColor: vendorColor(v),
+        backgroundColor: vendorColor(v)+'33',
+        tension: 0.25, fill:false
+      };
+    });
+  }
+  trendChart = new Chart(document.getElementById('chartTrend'), {
+    type: 'line',
+    data: { labels: DATES, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position:'top', labels:{ boxWidth:12, font:{size:10} } } },
+      scales: {
+        x: { ticks:{ font:{size:11} } },
+        y: { beginAtZero:true, ticks:{ font:{size:11} } }
+      }
+    }
+  });
+}
+
+// ── ORDERED vs ONSITED DR TABLE, PER DAY ─────────────────────────────────────
+function ovoFmtCell(c) {
+  if (!c || (c.Ordered === 0 && c.Onsited === 0)) return '–';
+  return `${c.Ordered || 0} / <b>${c.Onsited || 0}</b>`;
+}
+
+function buildOrderedVsOnsiteTable() {
+  document.getElementById('ovoSearch').addEventListener('input', ovoRenderTable);
+  ovoRenderTable();
+}
+
+let ovoFilteredRows = [], ovoDates = [];
+
+function ovoRenderTable() {
+  const dates = RAW.ordered_vs_onsite_daily.dates;
+  const search = document.getElementById('ovoSearch').value.toLowerCase();
+
+  // Campaign totals for the "Ordered" side come from the static booking total
+  // (not summed across days, since a multi-day contract would otherwise be double-counted)
+  const campaignOrdered = {};
+  RAW.ordered_vs_onsite.forEach(r => { campaignOrdered[r['Origin DC'] + '|' + r['Vehicle Type']] = r.Ordered; });
+
+  const map = {};
+  RAW.ordered_vs_onsite_daily.rows.forEach(r => {
+    const key = r['Origin DC'] + '|' + r['Vehicle Type'];
+    if (!map[key]) map[key] = { dc: r['Origin DC'], vt: r['Vehicle Type'] };
+    map[key][r.Date] = { Ordered: r.Ordered, Onsited: r.Onsited };
+  });
+
+  let rows = Object.keys(map).map(key => {
+    const row = map[key];
+    let totOnsited = 0;
+    dates.forEach(dt => { totOnsited += (row[dt] ? row[dt].Onsited : 0); });
+    row.total = { Ordered: campaignOrdered[key] || 0, Onsited: totOnsited };
+    return row;
+  });
+  rows = rows.filter(r => !search || r.dc.toLowerCase().includes(search));
+  rows.sort((a, b) => b.total.Onsited - a.total.Onsited);
+  ovoFilteredRows = rows;
+  ovoDates = dates;
+
+  document.getElementById('ovoResultCount').textContent = `${rows.length} of ${Object.keys(map).length} rows`;
+
+  const headRow = document.getElementById('ovoHeadRow');
+  let headHtml = '<th>Origin DC</th><th>Vehicle Type</th>';
+  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
+  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
+  headRow.innerHTML = headHtml;
+
+  const tbody = document.getElementById('ovoBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${dates.length + 3}" class="no-data">No matching Origin DC.</td></tr>`;
+  } else {
+    tbody.innerHTML = rows.map(r => {
+      let html = `<tr><td>${r.dc}</td><td>${r.vt}</td>`;
+      dates.forEach(dt => { html += `<td class="num">${ovoFmtCell(r[dt])}</td>`; });
+      html += `<td class="num" style="font-weight:800">${ovoFmtCell(r.total)}</td></tr>`;
+      return html;
+    }).join('');
+  }
+
+  let footHtml = '<td>Grand Total</td><td></td>';
+  dates.forEach(dt => {
+    const o = rows.reduce((s, r) => s + (r[dt] ? r[dt].Ordered : 0), 0);
+    const s2 = rows.reduce((s, r) => s + (r[dt] ? r[dt].Onsited : 0), 0);
+    footHtml += `<td class="num">${ovoFmtCell({ Ordered: o, Onsited: s2 })}</td>`;
+  });
+  const totO = rows.reduce((s, r) => s + r.total.Ordered, 0);
+  const totS = rows.reduce((s, r) => s + r.total.Onsited, 0);
+  footHtml += `<td class="num">${ovoFmtCell({ Ordered: totO, Onsited: totS })}</td>`;
+  document.getElementById('ovoFootRow').innerHTML = footHtml;
+}
+
+function exportOrderedVsOnsite() {
+  const headers = ['Origin DC', 'Vehicle Type'];
+  ovoDates.forEach(dt => headers.push(dt + ' Ordered', dt + ' Onsited'));
+  headers.push('Campaign Ordered', 'Campaign Onsited (vehicle-days)');
+  const rows = ovoFilteredRows.map(r => {
+    const row = [r.dc, r.vt];
+    ovoDates.forEach(dt => { const c = r[dt] || { Ordered: 0, Onsited: 0 }; row.push(c.Ordered, c.Onsited); });
+    row.push(r.total.Ordered, r.total.Onsited);
+    return row;
+  });
+  downloadCSV('ordered_vs_onsited_per_day.csv', headers, rows);
+}
+</script>
+</body>
+</html>

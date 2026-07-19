@@ -155,15 +155,20 @@ def build_onsite(gc, window_dates):
     return pd.DataFrame(rows)
 
 
-def build_dc_regions(trips, onsite):
-    # Region only exists on the onsite sheet, not the trip trackers - build a
-    # DC -> Region map from onsite data and reuse it everywhere Origin DC shows
-    # up (trips included). A DC seen only in trips (never onsite) has no known
-    # region and is bucketed 'Unknown' rather than dropped.
+def build_dc_regions(trips, onsite, order):
+    # Region only exists on the onsite sheet, not the trip trackers or the order
+    # sheet - build a DC -> Region map from onsite data and reuse it everywhere
+    # Origin DC shows up: trips, onsite, AND the order sheet (Ordered-vs-Onsited
+    # table). A DC seen only in trips/order (never onsite) has no known region
+    # and is bucketed 'Unknown' rather than dropped or silently missing.
     region_map = {}
     if len(onsite):
         region_map = onsite.groupby('Origin DC')['Region'].agg(lambda s: s.mode().iat[0]).to_dict()
-    all_dcs = set(trips['Origin DC'].dropna().unique()) | set(onsite['Origin DC'].dropna().unique() if len(onsite) else [])
+    all_dcs = set(trips['Origin DC'].dropna().unique())
+    if len(onsite):
+        all_dcs |= set(onsite['Origin DC'].dropna().unique())
+    if order is not None and len(order):
+        all_dcs |= set(order['Origin DC'].dropna().unique())
     return {dc: region_map.get(dc, 'Unknown') for dc in all_dcs}
 
 
@@ -341,7 +346,7 @@ def main():
     dashboard = build_dashboard_data(trips, window_dates)
     productivity = build_productivity(trips, onsite, window_dates)
     ordered_vs_onsite = build_ordered_vs_onsite(order, onsite, window_dates)
-    dc_regions = build_dc_regions(trips, onsite)
+    dc_regions = build_dc_regions(trips, onsite, order)
 
     raw = dict(dashboard)
     raw['productivity'] = productivity

@@ -77,37 +77,42 @@
   .result-count { margin-left: auto; font-size: 0.78rem; color: #666; }
 
   /* Table */
-  .table-box { background: white; border-radius: 12px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
+  .table-box { background: white; border-radius: 12px; border: 1px solid #eee;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: hidden; margin-bottom: 24px; }
   .table-box h2 { font-size: 0.9rem; font-weight: 700; padding: 16px 20px 0;
     color: #1a1a2e; }
   .table-box .subtxt { font-size: 0.76rem; color: #666; padding: 2px 20px 10px; }
   .table-scroll { overflow-x: auto; max-height: 560px; overflow-y: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  thead tr { background: #1a1a2e; color: white; position: sticky; top: 0; z-index: 2; }
-  th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 0.78rem;
-    letter-spacing: 0.03em; white-space: nowrap; cursor: pointer; user-select: none; }
-  th:hover { background: #0f3460; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  thead tr { background: rgba(248,250,252,0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 #d1d5db; }
+  th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 0.72rem;
+    letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280;
+    white-space: nowrap; cursor: pointer; user-select: none; transition: color 150ms ease-out; }
+  th:hover { color: #0f3460; }
   th .sort-icon { font-size: 0.65rem; margin-left: 4px; opacity: 0.6; }
-  tbody tr:nth-child(even) { background: #f8f9fb; }
-  tbody tr:hover { background: #eef2ff; }
-  td { padding: 9px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  tbody tr { background: transparent; transition: background-color 150ms ease-out; }
+  tbody tr:hover { background: #f8fafc; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f1f1f3; vertical-align: middle;
+    max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   td.num { text-align: right; font-weight: 600; }
-  tfoot td { font-weight: 800; background: #f0f2f5; border-top: 2px solid #ccc; }
+  tfoot td { font-weight: 800; background: #f8f9fb; border-top: 1px solid #e5e7eb; }
 
   .vendor-tag {
-    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 12px;
     font-size: 0.72rem; font-weight: 700; white-space: nowrap;
   }
+  .vendor-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
-  .no-data { text-align: center; padding: 40px; color: #666; font-size: 0.9rem; }
+  .no-data { text-align: center; padding: 40px; color: #666; font-size: 0.9rem; white-space: normal; }
 
   /* Pagination */
   .pagination { display: flex; align-items: center; gap: 8px;
-    padding: 14px 20px; border-top: 1px solid #eee; justify-content: flex-end; }
-  .pagination button { border: 1px solid #ddd; background: white; border-radius: 6px;
-    padding: 5px 11px; cursor: pointer; font-size: 0.8rem; }
-  .pagination button:hover:not(:disabled) { background: #0f3460; color: white; border-color: #0f3460; }
+    padding: 14px 20px; border-top: 1px solid #f1f1f3; justify-content: space-between; }
+  .pagination button { border: 1px solid #e5e7eb; background: white; border-radius: 6px;
+    padding: 5px 11px; cursor: pointer; font-size: 0.8rem;
+    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; }
+  .pagination button:hover:not(:disabled) { background: #f8fafc; border-color: #0f3460; color: #0f3460; }
   .pagination button:disabled { opacity: 0.35; cursor: default; }
   .pagination span { font-size: 0.78rem; color: #666; }
 </style>
@@ -190,14 +195,18 @@
       <h2>Top 20 Origin DCs by Trips</h2>
       <div class="chart-wrap"><canvas id="chartDC"></canvas></div>
     </div>
+  </div>
+
+  <!-- Vendor Share of Trips, filterable by region + DC -->
+  <div class="charts">
     <div class="chart-box full">
-      <h2>Daily Trip Trend
-        <select id="trendMode">
-          <option value="top10">Top 10 Origin DCs</option>
-          <option value="vendor">By Vendor</option>
-        </select>
+      <h2>Vendor Share of Trips
+        <span style="display:flex; gap:8px;">
+          <select id="vendorShareRegionFilter"><option value="">All Regions</option></select>
+          <select id="vendorShareDcFilter"><option value="">All DCs</option></select>
+        </span>
       </h2>
-      <div class="chart-wrap tall"><canvas id="chartTrend"></canvas></div>
+      <div class="chart-wrap" style="max-width:420px; margin:0 auto;"><canvas id="chartVendorShare"></canvas></div>
     </div>
   </div>
 
@@ -238,7 +247,10 @@
   <div class="charts">
     <div class="chart-box full">
       <h2>Productivity Trend by DC (Top 10)
-        <select id="dcTrendVehicleFilter"><option value="">All Vehicle Types</option></select>
+        <span style="display:flex; gap:8px;">
+          <select id="dcTrendRegionFilter"><option value="">All Regions</option></select>
+          <select id="dcTrendVehicleFilter"><option value="">All Vehicle Types</option></select>
+        </span>
       </h2>
       <div class="chart-wrap tall"><canvas id="chartDcProductivity"></canvas></div>
     </div>
@@ -248,18 +260,49 @@
   <div class="charts">
     <div class="chart-box full">
       <h2>DC Productivity &amp; Vendor Share
-        <select id="dcShareRegionFilter"><option value="">All Regions</option></select>
+        <span style="display:flex; gap:8px;">
+          <select id="dcShareRegionFilter"><option value="">All Regions</option></select>
+          <select id="dcShareDcFilter"><option value="">All DCs</option></select>
+        </span>
       </h2>
-      <div class="subtxt" style="padding:0 0 12px;">All Origin DCs in the selected region (or all DCs, if unfiltered), over the selected Date Window. Bars = trips stacked by Vendor (visualizing each vendor's share); line = productivity (right axis).</div>
+      <div class="subtxt" style="padding:0 0 12px;">All Origin DCs in the selected region, over the selected Date Window. Bars = trips stacked by Vendor (visualizing each vendor's share); line = productivity (right axis). Pick a specific Origin DC to drill into its daily trend instead.</div>
       <div class="chart-wrap tall" style="overflow-x:auto;">
         <div id="chartDcShareInner" style="height:100%;"><canvas id="chartDcShare"></canvas></div>
       </div>
+      <div id="chartDcShareNoData" class="no-data" style="display:none;">No data for this selection.</div>
     </div>
   </div>
 
-  <!-- 1. Vendor x DC x Date onsite/LT table -->
+  <!-- 1. Productivity per DC, per Day, filterable by Vehicle Type -->
   <div class="table-box">
-    <h2>1. Productivity: Vendor, DC, Daily Onsited &amp; Daily LT using DR</h2>
+    <h2>1. Productivity per DC, per Day
+      <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
+    </h2>
+    <div class="subtxt">Each cell reads <b>Daily LT / Daily Onsited &rarr; Productivity</b>, summed across vendors for that DC.</div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Region</label>
+        <select id="pdcRegion"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Origin DC</label>
+        <select id="pdcDc"><option value="">All DCs</option></select>
+      </div>
+      <button class="export-btn" onclick="exportProdByDcDaily()">⬇ Export CSV</button>
+      <span class="result-count" id="pdcResultCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr id="pdcHeadRow"></tr></thead>
+        <tbody id="pdcBody"></tbody>
+        <tfoot><tr id="pdcFootRow"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- 2. Vendor x DC x Date onsite/LT table -->
+  <div class="table-box">
+    <h2>2. Productivity: Vendor, DC, Daily Onsited &amp; Daily LT using DR</h2>
     <div class="subtxt">One row per Vendor &times; Origin DC &times; Vehicle Type &times; Day. Sortable, filterable.</div>
     <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
       <div class="filter-group">
@@ -303,36 +346,11 @@
       </table>
     </div>
     <div class="pagination">
-      <button id="pBtnPrev" onclick="pChangePage(-1)">← Prev</button>
       <span id="pPageInfo"></span>
-      <button id="pBtnNext" onclick="pChangePage(1)">Next →</button>
-    </div>
-  </div>
-
-  <!-- 2. Productivity per DC, per Day, filterable by Vehicle Type -->
-  <div class="table-box">
-    <h2>2. Productivity per DC, per Day
-      <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
-    </h2>
-    <div class="subtxt">Each cell shows the pure productivity ratio (Daily LT &divide; Daily Onsited), summed across vendors for that DC. Export CSV for the full Onsited/LT breakdown.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Region</label>
-        <select id="pdcRegion"><option value="">All</option></select>
+      <div style="display:flex; gap:8px;">
+        <button id="pBtnPrev" onclick="pChangePage(-1)">← Prev</button>
+        <button id="pBtnNext" onclick="pChangePage(1)">Next →</button>
       </div>
-      <div class="filter-group">
-        <label>Origin DC</label>
-        <select id="pdcDc"><option value="">All DCs</option></select>
-      </div>
-      <button class="export-btn" onclick="exportProdByDcDaily()">⬇ Export CSV</button>
-      <span class="result-count" id="pdcResultCount"></span>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr id="pdcHeadRow"></tr></thead>
-        <tbody id="pdcBody"></tbody>
-        <tfoot><tr id="pdcFootRow"></tr></tfoot>
-      </table>
     </div>
   </div>
 
@@ -528,11 +546,10 @@ function initDashboard() {
   fFrom.addEventListener('change', onDateWindowChange);
   fTo.addEventListener('change', onDateWindowChange);
 
-  document.getElementById('trendMode').addEventListener('change', refreshDashboard);
-
   // One-time setup: populate filter dropdowns and attach their listeners.
   // Re-rendering on Date Window changes is handled by refreshDashboard() below,
   // calling only the render* functions so options/listeners aren't duplicated.
+  setupVendorShareChart();
   setupDcProductivityChart();
   setupDcShareChart();
   setupProdByDcDaily();
@@ -588,7 +605,7 @@ function refreshDashboard() {
 
   buildVendorChart(vendorAgg);
   buildDCChart(dcAgg);
-  buildTrendChart(document.getElementById('trendMode').value, vendorAgg, dcAgg);
+  renderVendorShareChart();
   buildProductivityCards();
   renderDcProductivityChart();
   renderDcShareChart();
@@ -653,6 +670,58 @@ function buildDCChart(dcAgg) {
   });
 }
 
+// ── VENDOR SHARE OF TRIPS (pie, filterable by Region + DC) ───────────────────
+let vendorShareChart = null;
+
+function setupVendorShareChart() {
+  setupRegionDcFilter('vendorShareRegionFilter', 'vendorShareDcFilter', renderVendorShareChart);
+}
+
+function renderVendorShareChart() {
+  const region = document.getElementById('vendorShareRegionFilter').value;
+  const dc = document.getElementById('vendorShareDcFilter').value;
+  const dset = new Set(DATES);
+
+  const src = RAW.productivity.detail.filter(r =>
+    dset.has(r.Date) &&
+    (!dc || r['Origin DC'] === dc) &&
+    (!region || RAW.dc_regions[r['Origin DC']] === region)
+  );
+
+  const map = {};
+  src.forEach(r => { map[r.Vendor] = (map[r.Vendor] || 0) + r.LT_Trips; });
+  const vendors = Object.keys(map).filter(v => map[v] > 0).sort((a, b) => map[b] - map[a]);
+
+  if (vendorShareChart) vendorShareChart.destroy();
+  vendorShareChart = new Chart(document.getElementById('chartVendorShare'), {
+    type: 'pie',
+    data: {
+      labels: vendors,
+      datasets: [{
+        data: vendors.map(v => map[v]),
+        backgroundColor: vendors.map(v => vendorColor(v)),
+        borderColor: '#fff',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const total = ctx.dataset.data.reduce((s, v) => s + v, 0);
+              const pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0';
+              return `${ctx.label}: ${ctx.parsed.toLocaleString()} trips (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 // ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
 function buildProductivityCards() {
   const dset = new Set(DATES);
@@ -666,14 +735,14 @@ function buildProductivityCards() {
   document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
 }
 
-// Shared cell formatter: "LT / Onsited -> Productivity" used by the per-vendor pivot table
+// Shared cell formatter: "LT / Onsited -> Productivity" used by the per-DC pivot table
 function fmtCell(c) {
   if (!c || (c.Onsited === 0 && c.LT_Trips === 0)) return '–';
   const prod = c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '<span style="color:#aaa">–</span>';
   return `${c.LT_Trips} / ${c.Onsited} &rarr; <b>${prod}</b>`;
 }
 
-// Pure productivity ratio only, no LT/Onsited breakdown shown - used by the per-DC pivot table
+// Pure productivity ratio only, no LT/Onsited breakdown shown - used by the per-vendor pivot table
 function fmtProdOnly(c) {
   if (!c || c.Onsited === 0) return '–';
   return (c.LT_Trips / c.Onsited).toFixed(2);
@@ -746,11 +815,18 @@ function setupDcProductivityChart() {
   const sel = document.getElementById('dcTrendVehicleFilter');
   vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
   sel.addEventListener('change', renderDcProductivityChart);
+
+  const regions = [...new Set(Object.values(RAW.dc_regions))].sort();
+  const regionSel = document.getElementById('dcTrendRegionFilter');
+  regions.forEach(r => { let o = document.createElement('option'); o.value = r; o.textContent = r; regionSel.appendChild(o); });
+  regionSel.addEventListener('change', renderDcProductivityChart);
 }
 
 function renderDcProductivityChart() {
   const vt = document.getElementById('dcTrendVehicleFilter').value;
-  const { dates, rows } = pivotByField('Origin DC', vt);
+  const region = document.getElementById('dcTrendRegionFilter').value;
+  const { dates, rows: allRows } = pivotByField('Origin DC', vt);
+  const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
   const top10 = rows.slice(0, 10);
 
   const datasets = top10.map((r, i) => ({
@@ -777,14 +853,13 @@ function renderDcProductivityChart() {
   });
 }
 
-// ── DC PRODUCTIVITY & VENDOR SHARE (all DCs in region, over Date Window) ─────
+// ── DC PRODUCTIVITY & VENDOR SHARE ────────────────────────────────────────────
+// No DC picked: x-axis = DC (all DCs in the selected region). A DC picked:
+// x-axis = Date, drilling into that one DC's daily trend instead.
 let dcShareChart = null;
 
 function setupDcShareChart() {
-  const regionSel = document.getElementById('dcShareRegionFilter');
-  const regions = [...new Set(Object.values(RAW.dc_regions))].sort();
-  regions.forEach(r => { let o = document.createElement('option'); o.value = r; o.textContent = r; regionSel.appendChild(o); });
-  regionSel.addEventListener('change', renderDcShareChart);
+  setupRegionDcFilter('dcShareRegionFilter', 'dcShareDcFilter', renderDcShareChart);
 }
 
 // Aggregates RAW.productivity.detail (within DATES, optionally one Region) into,
@@ -806,15 +881,43 @@ function computeDcShareData(region) {
   return { dcs, dcMap };
 }
 
-function renderDcShareChart() {
-  const region = document.getElementById('dcShareRegionFilter').value;
-  const { dcs, dcMap } = computeDcShareData(region);
-  const vendors = [...new Set(dcs.flatMap(dc => Object.keys(dcMap[dc].vendorTrips)))].sort();
+// Same for a single DC's daily figures (drill-down mode)
+function computeDcShareDataByDay(dc) {
+  const dset = new Set(DATES);
+  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && r['Origin DC'] === dc);
+  const dayMap = {};
+  DATES.forEach(dt => { dayMap[dt] = { vendorTrips: {}, totalOnsited: 0, totalTrips: 0 }; });
+  src.forEach(r => {
+    const d = dayMap[r.Date];
+    d.vendorTrips[r.Vendor] = (d.vendorTrips[r.Vendor] || 0) + r.LT_Trips;
+    d.totalOnsited += r.Onsited;
+    d.totalTrips += r.LT_Trips;
+  });
+  return dayMap;
+}
+
+// Shared combo-chart renderer: stacked bar per key (Vendor) + a productivity
+// line on a secondary axis. `rawKeys` drives the data lookups; `displayLabels`
+// is what's actually shown on the x-axis (may differ, e.g. shortened DC names)
+function renderShareComboChart(rawKeys, displayLabels, vendors, vendorDataFn, prodDataFn) {
+  const wrap = document.getElementById('chartDcShareInner').closest('.chart-wrap');
+  const noDataEl = document.getElementById('chartDcShareNoData');
+
+  // No vendors means no trips at all for this selection (vendor keys only
+  // exist where a trip was recorded) - show a message instead of an empty chart
+  if (vendors.length === 0) {
+    if (dcShareChart) { dcShareChart.destroy(); dcShareChart = null; }
+    wrap.style.display = 'none';
+    noDataEl.style.display = 'block';
+    return;
+  }
+  wrap.style.display = '';
+  noDataEl.style.display = 'none';
 
   const barDatasets = vendors.map(v => ({
     type: 'bar',
     label: v,
-    data: dcs.map(dc => dcMap[dc].vendorTrips[v] || 0),
+    data: rawKeys.map(k => vendorDataFn(k, v)),
     backgroundColor: vendorColor(v),
     stack: 'share',
     yAxisID: 'y',
@@ -822,7 +925,7 @@ function renderDcShareChart() {
   const prodDataset = {
     type: 'line',
     label: 'Productivity',
-    data: dcs.map(dc => dcMap[dc].totalOnsited > 0 ? Number((dcMap[dc].totalTrips / dcMap[dc].totalOnsited).toFixed(2)) : null),
+    data: rawKeys.map(k => prodDataFn(k)),
     borderColor: '#1a1a2e',
     backgroundColor: '#1a1a2e',
     borderWidth: 2,
@@ -831,18 +934,15 @@ function renderDcShareChart() {
     yAxisID: 'y1',
   };
 
-  // Widen the scrollable inner wrapper so bars stay readable with many DCs
+  // Widen the scrollable inner wrapper so bars stay readable with many categories
   const inner = document.getElementById('chartDcShareInner');
   const visibleWidth = inner.parentElement.clientWidth;
-  inner.style.width = Math.max(visibleWidth, dcs.length * 42) + 'px';
+  inner.style.width = Math.max(visibleWidth, rawKeys.length * 42) + 'px';
 
   if (dcShareChart) dcShareChart.destroy();
   dcShareChart = new Chart(document.getElementById('chartDcShare'), {
     type: 'bar',
-    data: {
-      labels: dcs.map(dc => dc.replace(' DC', '').replace('Transit Point ', 'TP ')),
-      datasets: [...barDatasets, prodDataset],
-    },
+    data: { labels: displayLabels, datasets: [...barDatasets, prodDataset] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
@@ -855,7 +955,32 @@ function renderDcShareChart() {
   });
 }
 
-// ── 2. Productivity per DC, per Day (pure productivity, no LT/Onsited shown) ─
+function renderDcShareChart() {
+  const region = document.getElementById('dcShareRegionFilter').value;
+  const dcFilter = document.getElementById('dcShareDcFilter').value;
+
+  if (dcFilter) {
+    const dayMap = computeDcShareDataByDay(dcFilter);
+    const vendors = [...new Set(DATES.flatMap(dt => Object.keys(dayMap[dt].vendorTrips)))].sort();
+    renderShareComboChart(
+      DATES, DATES, vendors,
+      (dt, v) => dayMap[dt].vendorTrips[v] || 0,
+      dt => dayMap[dt].totalOnsited > 0 ? Number((dayMap[dt].totalTrips / dayMap[dt].totalOnsited).toFixed(2)) : null
+    );
+    return;
+  }
+
+  const { dcs, dcMap } = computeDcShareData(region);
+  const vendors = [...new Set(dcs.flatMap(dc => Object.keys(dcMap[dc].vendorTrips)))].sort();
+  const displayLabels = dcs.map(dc => dc.replace(' DC', '').replace('Transit Point ', 'TP '));
+  renderShareComboChart(
+    dcs, displayLabels, vendors,
+    (dc, v) => dcMap[dc].vendorTrips[v] || 0,
+    dc => dcMap[dc].totalOnsited > 0 ? Number((dcMap[dc].totalTrips / dcMap[dc].totalOnsited).toFixed(2)) : null
+  );
+}
+
+// ── 1. Productivity per DC, per Day (full detail: Onsited, LT, Productivity) ─
 function setupProdByDcDaily() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
   const sel = document.getElementById('dcVehicleFilter');
@@ -888,13 +1013,13 @@ function renderProdByDcDaily() {
   } else {
     tbody.innerHTML = rows.map(r => {
       let html = `<tr><td>${r.key}</td>`;
-      dates.forEach(dt => { html += `<td class="num">${fmtProdOnly(r[dt])}</td>`; });
-      html += `<td class="num" style="font-weight:800">${fmtProdOnly(r.total)}</td></tr>`;
+      dates.forEach(dt => { html += `<td class="num">${fmtCell(r[dt])}</td>`; });
+      html += `<td class="num" style="font-weight:800">${fmtCell(r.total)}</td></tr>`;
       return html;
     }).join('');
   }
 
-  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates, fmtProdOnly);
+  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates);
 }
 
 function exportProdByDcDaily() {
@@ -1027,7 +1152,9 @@ function pRenderTable() {
   const rows = pFiltered.slice(start, start+P_PAGE_SIZE);
 
   document.getElementById('pResultCount').textContent = `${total} rows`;
-  document.getElementById('pPageInfo').textContent = `Page ${pPage} of ${Math.max(pages,1)}`;
+  document.getElementById('pPageInfo').textContent = total === 0
+    ? 'Showing 0 of 0 results'
+    : `Showing ${start + 1}-${start + rows.length} of ${total} results`;
   document.getElementById('pBtnPrev').disabled = pPage <= 1;
   document.getElementById('pBtnNext').disabled = pPage >= pages;
 
@@ -1061,49 +1188,6 @@ function exportProdDetail() {
 function pChangePage(dir) {
   pPage += dir;
   pRenderTable();
-}
-
-let trendChart = null;
-function buildTrendChart(mode, vendorAgg, dcAgg) {
-  if (trendChart) trendChart.destroy();
-  let datasets = [];
-  if (mode === 'top10') {
-    const top10 = dcAgg.slice(0,10).map(d=>d['Origin DC']);
-    datasets = top10.map((dc,i) => {
-      const rows = RAW.by_dc_date.filter(r=>r['Origin DC']===dc);
-      return {
-        label: dc.replace(' DC','').replace('Transit Point ','TP '),
-        data: DATES.map(dt => { const f = rows.find(r=>r.Date===dt); return f ? f.Trips : 0; }),
-        borderColor: PALETTE[i%PALETTE.length],
-        backgroundColor: PALETTE[i%PALETTE.length]+'33',
-        tension: 0.25, fill:false
-      };
-    });
-  } else {
-    const vendors = vendorAgg.filter(v=>v.Trips>0).map(v=>v.Vendor);
-    datasets = vendors.map(v => {
-      const rows = RAW.by_vendor_date.filter(r=>r.Vendor===v);
-      return {
-        label: v,
-        data: DATES.map(dt => { const f = rows.find(r=>r.Date===dt); return f ? f.Trips : 0; }),
-        borderColor: vendorColor(v),
-        backgroundColor: vendorColor(v)+'33',
-        tension: 0.25, fill:false
-      };
-    });
-  }
-  trendChart = new Chart(document.getElementById('chartTrend'), {
-    type: 'line',
-    data: { labels: DATES, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position:'top', labels:{ boxWidth:12, font:{size:10} } } },
-      scales: {
-        x: { ticks:{ font:{size:11} } },
-        y: { beginAtZero:true, ticks:{ font:{size:11} } }
-      }
-    }
-  });
 }
 
 // ── ONSITED DR PER VENDOR PER DC, PER DAY ────────────────────────────────────
@@ -1215,8 +1299,14 @@ function ovoRenderTable() {
   const campaignOrdered = {};
   RAW.ordered_vs_onsite.forEach(r => { campaignOrdered[r['Origin DC'] + '|' + r['Vehicle Type']] = r.Ordered; });
 
+  // Only keys with at least one Date inside the current Date Window get a row -
+  // otherwise a DC/Vehicle Type combo whose activity is entirely outside the
+  // selected sub-range would still show up as an all-dash row (it exists
+  // somewhere in the full campaign, just not in this window).
+  const dset = new Set(dates);
   const map = {};
   RAW.ordered_vs_onsite_daily.rows.forEach(r => {
+    if (!dset.has(r.Date)) return;
     const key = r['Origin DC'] + '|' + r['Vehicle Type'];
     if (!map[key]) map[key] = { dc: r['Origin DC'], vt: r['Vehicle Type'] };
     map[key][r.Date] = { Ordered: r.Ordered, Onsited: r.Onsited };

@@ -220,9 +220,8 @@
     <a href="https://docs.google.com/spreadsheets/d/1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y" target="_blank" rel="noopener">[29309] On Site Registration sheet</a>
     with <code>cost_type = "By Day"</code> and <code>arrival_status</code> not <b>"Expired"</b> or <b>"No Show"</b> &mdash;
     i.e. vehicles that actually showed up, whether On Time, Late, or still Pending check-out.
-    <b>Note:</b> this sheet has no plate number or registration ID, so unlike the earlier data source there is
-    nothing to dedupe repeat check-ins by &mdash; each qualifying row counts as one onsite unit. If the same
-    physical vehicle gets registered more than once the same day, it is counted more than once here.
+    Deduped by distinct <b>Nopol (plate number) + Vendor</b> per day &mdash; if the same physical vehicle gets
+    registered more than once on the same day, it counts once. Rows without a Nopol filled in count individually.
     <b>Daily LT (using DR)</b> = first-leg trips that had actually departed, billed Cost Type "By Day".
     <b>Productivity</b> = Daily LT &divide; Daily Onsited.
   </div>
@@ -351,9 +350,9 @@
     <div class="subtxt" id="ovoSubtxt">
       Each cell reads <b>Ordered / Onsited</b>. <b>Ordered</b> = units booked on the
       <a href="https://docs.google.com/spreadsheets/d/1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E" target="_blank" rel="noopener">DR order sheet</a>
-      whose contract window (Start&ndash;End date) covers that day. <b>Onsited</b> = check-ins ("By Day",
-      excl. Expired/No Show) at that DC on that specific day &mdash; the current source sheet has no plate/ID
-      to dedupe by, so a vehicle registered twice the same day counts twice. The order sheet only has two coarse
+      whose contract window (Start&ndash;End date) covers that day. <b>Onsited</b> = distinct vehicles
+      (deduped by Nopol + Vendor) that checked in ("By Day", excl. Expired/No Show) at that DC on that
+      specific day. The order sheet only has two coarse
       categories, <b>CDD L</b> and <b>WB</b>; WB is mapped to the onsite system's <b>TRONTON (10WH)</b> record,
       and CDD L covers every other Vehicle Type recorded onsite. The Campaign-to-date column sums Onsited across
       days, so it can exceed the campaign-to-date Ordered count.

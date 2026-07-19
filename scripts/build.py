@@ -36,12 +36,13 @@ TRACKER_COLS = ['trip_date_v2', 'trip_route', 'slot_number', 'trip_number', 'cos
                 'total_unloaded', 'trip_std', 'trip_atd', 'trip_sta', 'trip_ata',
                 'trip_source', 'trip_status', 'dest_sta', 'dest_ata', 'agency_name']
 
-# [29309] On Site Registration sheet - NOTE the header row's own text labels (row 3)
-# are misaligned with the actual data by a few columns (left over from when the
-# agency_name column was added). This mapping is based on verified data content,
-# not the header text. No plate/registration ID here either - see build_onsite().
+# [29309] On Site Registration sheet - a Nopol (plate number) column was added
+# after 'original_soc_station', shifting everything after it right by one. The
+# header row's own text labels now match this layout (verified against sample
+# data). Plate lets us dedupe duplicate check-in rows for the same vehicle -
+# see build_onsite().
 ONSITE_HEADER_ROW = 3
-ONSITE_COLS = ['trip_date', 'original_soc_station', 'original_vehicle_type', 'agency_name', 'arrival_status', 'cost_type']
+ONSITE_COLS = ['trip_date', 'original_soc_station', 'nopol', 'original_vehicle_type', 'agency_name', 'arrival_status', 'cost_type']
 
 
 def get_client():
@@ -121,29 +122,35 @@ def build_onsite(gc, window_dates):
     min_d, max_d = window_dates[0], window_dates[-1]
     sh = gc.open_by_key(SHEET_IDS['ONSITE'])
     ws = sh.worksheet('raw')
-    values = ws.get(f'A{ONSITE_HEADER_ROW + 1}:F')
+    values = ws.get(f'A{ONSITE_HEADER_ROW + 1}:G')
 
     rows = []
     for i, r in enumerate(values):
-        r = list(r) + [''] * (6 - len(r))
+        r = list(r) + [''] * (7 - len(r))
         date_str = to_date_str(r[0])
         if not date_str or date_str < min_d or date_str > max_d:
             continue
-        if r[5] != 'By Day':
+        if r[6] != 'By Day':
             continue
-        status = r[4]
+        status = r[5]
         if status in ('Expired', 'No Show'):
             continue
+        vendor = r[4]
+        plate = str(r[2]).strip().upper()
         rows.append({
             'Date': date_str,
             'Origin DC': r[1],
-            'Vendor': r[3],
-            'Vehicle Type': r[2] or 'Unknown',
-            # No plate/registration ID in this sheet - each row is its own check-in
-            # event with nothing to dedupe against, counted as one distinct unit.
-            'row_key': i,
+            'Vendor': vendor,
+            'Vehicle Type': r[3] or 'Unknown',
+            # Dedupe key: distinct plate+vendor *per day*. A vehicle checked in
+            # twice the same day for the same vendor/DC/type is one physical unit,
+            # not two - but the same vehicle onsite on different days still counts
+            # once per day (this feeds "vehicle-days" totals). Falls back to a
+            # per-row key when Nopol is blank (legacy rows before this column
+            # existed) so those still count individually.
+            'unit_key': f'{date_str}|{vendor}|{plate}' if plate else f'ROW_{i}',
         })
-    print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window (no dedup key available)')
+    print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window')
     return pd.DataFrame(rows)
 
 
@@ -218,7 +225,7 @@ def build_productivity(trips, onsite, window_dates):
     trip_counts = byday.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date']).size().reset_index(name='LT_Trips')
 
     if len(onsite):
-        onsite_counts = onsite.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date']).size().reset_index(name='Onsited')
+        onsite_counts = onsite.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date'])['unit_key'].nunique().reset_index(name='Onsited')
     else:
         onsite_counts = pd.DataFrame(columns=['Vendor', 'Origin DC', 'Vehicle Type', 'Date', 'Onsited'])
 
@@ -269,7 +276,7 @@ def build_ordered_vs_onsite(order, onsite, window_dates):
     onsite = onsite.copy()
     if len(onsite):
         onsite['Bucket'] = onsite['Vehicle Type'].apply(bucket_vehicle_type)
-        total_onsited = onsite.groupby(['Origin DC', 'Bucket']).size().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
+        total_onsited = onsite.groupby(['Origin DC', 'Bucket'])['unit_key'].nunique().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
     else:
         total_onsited = pd.DataFrame(columns=['Origin DC', 'Vehicle Type', 'Onsited'])
 
@@ -289,7 +296,7 @@ def build_ordered_vs_onsite(order, onsite, window_dates):
     daily_ordered = daily_ordered.rename(columns={'Order Type': 'Vehicle Type'})
 
     if len(onsite):
-        daily_onsited = onsite.groupby(['Origin DC', 'Bucket', 'Date']).size().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
+        daily_onsited = onsite.groupby(['Origin DC', 'Bucket', 'Date'])['unit_key'].nunique().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
     else:
         daily_onsited = pd.DataFrame(columns=['Origin DC', 'Vehicle Type', 'Date', 'Onsited'])
 

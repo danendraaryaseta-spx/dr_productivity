@@ -286,11 +286,11 @@
     <h2>1. Productivity per DC, per Day
       <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
     </h2>
-    <div class="subtxt">Each cell reads <b>Daily LT / Daily Onsited &rarr; Productivity</b>, summed across vendors for that DC.</div>
+    <div class="subtxt">Daily Onsited, Daily LT, and Productivity shown as separate columns per day, summed across vendors for that DC. "Overall" totals across the whole selected Date Window.</div>
     <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
       <div class="filter-group">
         <label>Region</label>
-        <select id="pdcRegion"><option value="">All</option></select>
+        <select id="pdcRegion"><option value="">Nationwide</option></select>
       </div>
       <div class="filter-group">
         <label>Origin DC</label>
@@ -1054,6 +1054,12 @@ function setupProdByDcDaily() {
 
 let pdcFilteredRows = [], pdcDates = [];
 
+// Sub-label markup for a day/Overall column group header: metric name in a
+// smaller, lighter weight under the bold date/"Overall" text
+function subColHeader(mainLabel, subLabel) {
+  return `<th style="text-align:center">${mainLabel}<br><span style="font-weight:400;opacity:.7;font-size:0.68rem">${subLabel}</span></th>`;
+}
+
 function renderProdByDcDaily() {
   const vt = document.getElementById('dcVehicleFilter').value;
   const region = document.getElementById('pdcRegion').value;
@@ -1067,23 +1073,40 @@ function renderProdByDcDaily() {
 
   const headRow = document.getElementById('pdcHeadRow');
   let headHtml = '<th>Origin DC</th>';
-  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
-  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
+  dates.forEach(dt => {
+    headHtml += subColHeader(dt, 'Onsited') + subColHeader(dt, 'LT') + subColHeader(dt, 'Productivity');
+  });
+  headHtml += subColHeader('Overall', 'Onsited') + subColHeader('Overall', 'LT') + subColHeader('Overall', 'Productivity');
   headRow.innerHTML = headHtml;
 
+  const colCount = 1 + dates.length * 3 + 3;
   const tbody = document.getElementById('pdcBody');
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${dates.length + 2}" class="no-data">No matching Origin DC.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="no-data">No matching Origin DC.</td></tr>`;
   } else {
     tbody.innerHTML = rows.map(r => {
       let html = `<tr><td>${r.key}</td>`;
-      dates.forEach(dt => { html += `<td class="num">${fmtCell(r[dt])}</td>`; });
-      html += `<td class="num" style="font-weight:800">${fmtCell(r.total)}</td></tr>`;
+      dates.forEach(dt => {
+        const c = r[dt] || { Onsited: 0, LT_Trips: 0 };
+        html += `<td class="num">${c.Onsited}</td><td class="num">${c.LT_Trips}</td><td class="num">${fmtProdOnly(c)}</td>`;
+      });
+      html += `<td class="num">${r.total.Onsited}</td><td class="num">${r.total.LT_Trips}</td>` +
+        `<td class="num" style="font-weight:800">${fmtProdOnly(r.total)}</td></tr>`;
       return html;
     }).join('');
   }
 
-  document.getElementById('pdcFootRow').innerHTML = '<td>Grand Total</td>' + pivotFootRow(rows, dates);
+  let footHtml = '<td>Grand Total</td>';
+  dates.forEach(dt => {
+    const o = rows.reduce((s, r) => s + (r[dt] ? r[dt].Onsited : 0), 0);
+    const t = rows.reduce((s, r) => s + (r[dt] ? r[dt].LT_Trips : 0), 0);
+    footHtml += `<td class="num">${o}</td><td class="num">${t}</td><td class="num">${fmtProdOnly({ Onsited: o, LT_Trips: t })}</td>`;
+  });
+  const go = rows.reduce((s, r) => s + r.total.Onsited, 0);
+  const gt = rows.reduce((s, r) => s + r.total.LT_Trips, 0);
+  footHtml += `<td class="num">${go}</td><td class="num">${gt}</td>` +
+    `<td class="num" style="font-weight:800">${fmtProdOnly({ Onsited: go, LT_Trips: gt })}</td>`;
+  document.getElementById('pdcFootRow').innerHTML = footHtml;
 }
 
 function exportProdByDcDaily() {

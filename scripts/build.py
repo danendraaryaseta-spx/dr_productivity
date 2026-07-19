@@ -35,13 +35,15 @@ TRACKER_COLS = ['trip_date_v2', 'trip_route', 'slot_number', 'trip_number', 'cos
                 'total_unloaded', 'trip_std', 'trip_atd', 'trip_sta', 'trip_ata',
                 'trip_source', 'trip_status', 'dest_sta', 'dest_ata', 'agency_name']
 
-# [29309] On Site Registration sheet - a Nopol (plate number) column was added
-# after 'original_soc_station', shifting everything after it right by one. The
+# [29309] On Site Registration sheet - a Nopol (plate number) column and a
+# Region column were added (Region appended at the end, after cost_type). The
 # header row's own text labels now match this layout (verified against sample
 # data). Plate lets us dedupe duplicate check-in rows for the same vehicle -
-# see build_onsite().
+# see build_onsite(). Region lets the dashboard filter DCs by region even
+# though the trip trackers (SOC-LM/FM-SOC) have no region field of their own -
+# see build_dc_regions().
 ONSITE_HEADER_ROW = 3
-ONSITE_COLS = ['trip_date', 'original_soc_station', 'nopol', 'original_vehicle_type', 'agency_name', 'arrival_status', 'cost_type']
+ONSITE_COLS = ['trip_date', 'original_soc_station', 'nopol', 'original_vehicle_type', 'agency_name', 'arrival_status', 'cost_type', 'region']
 
 
 def get_client():
@@ -120,11 +122,11 @@ def build_onsite(gc, window_dates):
     min_d, max_d = window_dates[0], window_dates[-1]
     sh = gc.open_by_key(SHEET_IDS['ONSITE'])
     ws = sh.worksheet('raw')
-    values = ws.get(f'A{ONSITE_HEADER_ROW + 1}:G')
+    values = ws.get(f'A{ONSITE_HEADER_ROW + 1}:H')
 
     rows = []
     for i, r in enumerate(values):
-        r = list(r) + [''] * (7 - len(r))
+        r = list(r) + [''] * (8 - len(r))
         date_str = to_date_str(r[0])
         if not date_str or date_str < min_d or date_str > max_d:
             continue
@@ -140,6 +142,7 @@ def build_onsite(gc, window_dates):
             'Origin DC': r[1],
             'Vendor': vendor,
             'Vehicle Type': r[3] or 'Unknown',
+            'Region': r[7] or 'Unknown',
             # Dedupe key: distinct plate+vendor *per day*. A vehicle checked in
             # twice the same day for the same vendor/DC/type is one physical unit,
             # not two - but the same vehicle onsite on different days still counts
@@ -150,6 +153,18 @@ def build_onsite(gc, window_dates):
         })
     print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window')
     return pd.DataFrame(rows)
+
+
+def build_dc_regions(trips, onsite):
+    # Region only exists on the onsite sheet, not the trip trackers - build a
+    # DC -> Region map from onsite data and reuse it everywhere Origin DC shows
+    # up (trips included). A DC seen only in trips (never onsite) has no known
+    # region and is bucketed 'Unknown' rather than dropped.
+    region_map = {}
+    if len(onsite):
+        region_map = onsite.groupby('Origin DC')['Region'].agg(lambda s: s.mode().iat[0]).to_dict()
+    all_dcs = set(trips['Origin DC'].dropna().unique()) | set(onsite['Origin DC'].dropna().unique() if len(onsite) else [])
+    return {dc: region_map.get(dc, 'Unknown') for dc in all_dcs}
 
 
 def bucket_vehicle_type(vt):
@@ -326,11 +341,13 @@ def main():
     dashboard = build_dashboard_data(trips, window_dates)
     productivity = build_productivity(trips, onsite, window_dates)
     ordered_vs_onsite = build_ordered_vs_onsite(order, onsite, window_dates)
+    dc_regions = build_dc_regions(trips, onsite)
 
     raw = dict(dashboard)
     raw['productivity'] = productivity
     raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
     raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
+    raw['dc_regions'] = dc_regions
     raw['generated_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     raw['order_sheet_available'] = order is not None
 

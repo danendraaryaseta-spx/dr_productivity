@@ -84,7 +84,7 @@
   .table-box .subtxt { font-size: 0.76rem; color: #666; padding: 2px 20px 10px; }
   .table-scroll { overflow-x: auto; max-height: 560px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
-  thead tr { background: rgba(248,250,252,0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  thead { background: rgba(248,250,252,0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 #d1d5db; }
   th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 0.72rem;
     letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280;
@@ -301,7 +301,10 @@
     </div>
     <div class="table-scroll">
       <table>
-        <thead><tr id="pdcHeadRow"></tr></thead>
+        <thead>
+          <tr id="pdcHeadRow1"></tr>
+          <tr id="pdcHeadRow2"></tr>
+        </thead>
         <tbody id="pdcBody"></tbody>
         <tfoot><tr id="pdcFootRow"></tr></tfoot>
       </table>
@@ -1054,11 +1057,7 @@ function setupProdByDcDaily() {
 
 let pdcFilteredRows = [], pdcDates = [];
 
-// Sub-label markup for a day/Overall column group header: metric name in a
-// smaller, lighter weight under the bold date/"Overall" text
-function subColHeader(mainLabel, subLabel) {
-  return `<th style="text-align:center">${mainLabel}<br><span style="font-weight:400;opacity:.7;font-size:0.68rem">${subLabel}</span></th>`;
-}
+const PDC_SUBCOLS = ['Onsited', 'LT', 'Productivity'];
 
 function renderProdByDcDaily() {
   const vt = document.getElementById('dcVehicleFilter').value;
@@ -1071,13 +1070,17 @@ function renderProdByDcDaily() {
 
   document.getElementById('pdcResultCount').textContent = `${rows.length} of ${allRows.length} DCs`;
 
-  const headRow = document.getElementById('pdcHeadRow');
-  let headHtml = '<th>Origin DC</th>';
-  dates.forEach(dt => {
-    headHtml += subColHeader(dt, 'Onsited') + subColHeader(dt, 'LT') + subColHeader(dt, 'Productivity');
-  });
-  headHtml += subColHeader('Overall', 'Onsited') + subColHeader('Overall', 'LT') + subColHeader('Overall', 'Productivity');
-  headRow.innerHTML = headHtml;
+  // Row 1: one merged cell per Date/Overall spanning its 3 sub-columns.
+  // Row 2: the Onsited/LT/Productivity sub-labels underneath each merged cell.
+  let head1 = '<th rowspan="2">Origin DC</th>';
+  dates.forEach(dt => { head1 += `<th colspan="3" style="text-align:center">${dt}</th>`; });
+  head1 += '<th colspan="3" style="text-align:center">Overall</th>';
+  document.getElementById('pdcHeadRow1').innerHTML = head1;
+
+  const subColHtml = PDC_SUBCOLS.map(lbl =>
+    `<th style="text-align:center; font-weight:400; opacity:.75; font-size:0.68rem;">${lbl}</th>`
+  ).join('');
+  document.getElementById('pdcHeadRow2').innerHTML = subColHtml.repeat(dates.length + 1);
 
   const colCount = 1 + dates.length * 3 + 3;
   const tbody = document.getElementById('pdcBody');

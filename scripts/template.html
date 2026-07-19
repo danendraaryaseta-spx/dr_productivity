@@ -250,8 +250,12 @@
   <!-- Productivity trend by DC -->
   <div class="charts">
     <div class="chart-box full">
-      <h2>Productivity Trend by DC (Top 10) + Nationwide
+      <h2>Productivity Trend <span id="dcTrendLevelLabel">by DC (Top 10)</span> + Nationwide
         <span style="display:flex; gap:8px;">
+          <select id="dcTrendLevel">
+            <option value="dc">DC Level</option>
+            <option value="region">Region Level</option>
+          </select>
           <select id="dcTrendGranularity">
             <option value="daily">Daily</option>
             <option value="week">Week on Week</option>
@@ -836,6 +840,37 @@ function setupDcProductivityChart() {
   regionSel.addEventListener('change', renderDcProductivityChart);
 
   document.getElementById('dcTrendGranularity').addEventListener('change', renderDcProductivityChart);
+  document.getElementById('dcTrendLevel').addEventListener('change', renderDcProductivityChart);
+}
+
+// Groups RAW.productivity.detail by each DC's Region (a derived field, via
+// RAW.dc_regions) x Date, within DATES, optionally restricted to one Vehicle
+// Type. Same shape as pivotByField's return, but keyed by region instead of
+// a raw field on the row.
+function pivotByRegion(vehicleType) {
+  const dates = DATES;
+  const dset = new Set(dates);
+  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vehicleType || r['Vehicle Type'] === vehicleType));
+  const map = {};
+  src.forEach(r => {
+    const k = RAW.dc_regions[r['Origin DC']] || 'Unknown';
+    if (!map[k]) map[k] = {};
+    if (!map[k][r.Date]) map[k][r.Date] = { Onsited: 0, LT_Trips: 0 };
+    map[k][r.Date].Onsited += r.Onsited;
+    map[k][r.Date].LT_Trips += r.LT_Trips;
+  });
+  let rows = Object.keys(map).map(key => {
+    const row = { key };
+    let totO = 0, totT = 0;
+    dates.forEach(dt => {
+      const c = map[key][dt] || { Onsited: 0, LT_Trips: 0 };
+      row[dt] = c; totO += c.Onsited; totT += c.LT_Trips;
+    });
+    row.total = { Onsited: totO, LT_Trips: totT };
+    return row;
+  });
+  rows.sort((a, b) => b.total.LT_Trips - a.total.LT_Trips);
+  return { dates, rows };
 }
 
 // Buckets a chronological list of date strings into weeks (Monday-start) or,
@@ -877,9 +912,24 @@ function renderDcProductivityChart() {
   const vt = document.getElementById('dcTrendVehicleFilter').value;
   const region = document.getElementById('dcTrendRegionFilter').value;
   const granularity = document.getElementById('dcTrendGranularity').value;
-  const { dates, rows: allRows } = pivotByField('Origin DC', vt);
-  const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
-  const top10 = rows.slice(0, 10);
+  const level = document.getElementById('dcTrendLevel').value; // 'dc' | 'region'
+
+  // Region Level shows every region as its own line, so per-region filtering
+  // to a single region would leave nothing to compare - disable it in that mode.
+  document.getElementById('dcTrendRegionFilter').disabled = (level === 'region');
+  document.getElementById('dcTrendLevelLabel').textContent = level === 'region' ? 'by Region' : 'by DC (Top 10)';
+
+  let dates, seriesRows;
+  if (level === 'region') {
+    const result = pivotByRegion(vt);
+    dates = result.dates;
+    seriesRows = result.rows;
+  } else {
+    const { dates: d, rows: allRows } = pivotByField('Origin DC', vt);
+    dates = d;
+    const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
+    seriesRows = rows.slice(0, 10);
+  }
 
   const buckets = bucketDatesByGranularity(dates, granularity);
   const labels = buckets.map(b => granularity === 'week' ? 'Wk ' + b[0] : b[0]);
@@ -896,8 +946,8 @@ function renderDcProductivityChart() {
     tension: 0.25, fill: false
   };
 
-  const dcDatasets = top10.map((r, i) => ({
-    label: r.key.replace(' DC', '').replace('Transit Point ', 'TP '),
+  const seriesDatasets = seriesRows.map((r, i) => ({
+    label: level === 'region' ? r.key : r.key.replace(' DC', '').replace('Transit Point ', 'TP '),
     data: buckets.map(b => aggregateOverBucket(r, b)),
     borderColor: PALETTE[i % PALETTE.length],
     backgroundColor: PALETTE[i % PALETTE.length] + '33',
@@ -908,7 +958,7 @@ function renderDcProductivityChart() {
   if (dcProductivityChart) dcProductivityChart.destroy();
   dcProductivityChart = new Chart(document.getElementById('chartDcProductivity'), {
     type: 'line',
-    data: { labels, datasets: [nationwideDataset, ...dcDatasets] },
+    data: { labels, datasets: [nationwideDataset, ...seriesDatasets] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },

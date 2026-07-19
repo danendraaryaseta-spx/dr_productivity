@@ -31,12 +31,13 @@
 
   /* Summary Cards */
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-  .card { background: white; border-radius: 12px; padding: 18px 22px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid; }
-  .card.blue  { border-color: #0f3460; }
-  .card.red   { border-color: #e94560; }
-  .card.green { border-color: #06d6a0; }
-  .card.gold  { border-color: #f4a261; }
+  .card { position: relative; background: white; border-radius: 12px; padding: 18px 22px 18px 30px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07); border: 1px solid #eee; }
+  .card::before { content: ''; position: absolute; left: 14px; top: 25px; width: 8px; height: 8px; border-radius: 50%; }
+  .card.blue::before  { background: #0f3460; }
+  .card.red::before   { background: #e94560; }
+  .card.green::before { background: #06d6a0; }
+  .card.gold::before  { background: #f4a261; }
   .card-val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
   .card.blue  .card-val { color: #0f3460; }
   .card.red   .card-val { color: #e94560; }
@@ -62,8 +63,9 @@
   .filters label { font-size: 0.78rem; color: #555; font-weight: 600; }
   .filters select, .filters input {
     border: 1px solid #ddd; border-radius: 7px; padding: 6px 10px;
-    font-size: 0.82rem; color: #1a1a2e; outline: none; background: #fafafa; }
-  .filters select:focus, .filters input:focus { border-color: #0f3460; }
+    font-size: 0.82rem; color: #1a1a2e; background: #fafafa; }
+  .filters select:focus-visible, .filters input:focus-visible {
+    outline: 2px solid #0f3460; outline-offset: 1px; border-color: #0f3460; }
   .filter-group { display: flex; align-items: center; gap: 8px; }
   .reset-btn { background: #e94560; color: white; border: none; border-radius: 7px;
     padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600; }
@@ -72,14 +74,14 @@
     padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600;
     display: inline-flex; align-items: center; gap: 6px; }
   .export-btn:hover { background: #0c2a4d; }
-  .result-count { margin-left: auto; font-size: 0.78rem; color: #888; }
+  .result-count { margin-left: auto; font-size: 0.78rem; color: #666; }
 
   /* Table */
   .table-box { background: white; border-radius: 12px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }
   .table-box h2 { font-size: 0.9rem; font-weight: 700; padding: 16px 20px 0;
     color: #1a1a2e; }
-  .table-box .subtxt { font-size: 0.76rem; color: #888; padding: 2px 20px 10px; }
+  .table-box .subtxt { font-size: 0.76rem; color: #666; padding: 2px 20px 10px; }
   .table-scroll { overflow-x: auto; max-height: 560px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   thead tr { background: #1a1a2e; color: white; position: sticky; top: 0; z-index: 2; }
@@ -91,19 +93,14 @@
   tbody tr:hover { background: #eef2ff; }
   td { padding: 9px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
   td.num { text-align: right; font-weight: 600; }
-  td.vendor-cell { font-weight: 700; }
   tfoot td { font-weight: 800; background: #f0f2f5; border-top: 2px solid #ccc; }
 
   .vendor-tag {
     display: inline-block; padding: 2px 8px; border-radius: 12px;
     font-size: 0.72rem; font-weight: 700; white-space: nowrap;
   }
-  .bar-cell { display: flex; align-items: center; gap: 8px; }
-  .bar-bg { flex: 1; background: #eee; border-radius: 4px; height: 7px; min-width: 60px; }
-  .bar-fill { height: 7px; border-radius: 4px; }
-  .trips-num { min-width: 30px; text-align: right; font-weight: 700; font-size: 0.82rem; }
 
-  .no-data { text-align: center; padding: 40px; color: #aaa; font-size: 0.9rem; }
+  .no-data { text-align: center; padding: 40px; color: #666; font-size: 0.9rem; }
 
   /* Pagination */
   .pagination { display: flex; align-items: center; gap: 8px;

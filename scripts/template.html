@@ -197,11 +197,15 @@
     </div>
   </div>
 
-  <!-- Vendor Share of Trips, filterable by region + DC -->
+  <!-- Vendor Share, filterable by region + DC, metric = Trips or DR Onsited -->
   <div class="charts">
     <div class="chart-box full">
-      <h2>Vendor Share of Trips
+      <h2>Vendor Share
         <span style="display:flex; gap:8px;">
+          <select id="vendorShareMetric">
+            <option value="trips">Share of Trips</option>
+            <option value="onsited">Share of DR Onsited</option>
+          </select>
           <select id="vendorShareRegionFilter"><option value="">All Regions</option></select>
           <select id="vendorShareDcFilter"><option value="">All DCs</option></select>
         </span>
@@ -246,8 +250,12 @@
   <!-- Productivity trend by DC -->
   <div class="charts">
     <div class="chart-box full">
-      <h2>Productivity Trend by DC (Top 10)
+      <h2>Productivity Trend by DC (Top 10) + Nationwide
         <span style="display:flex; gap:8px;">
+          <select id="dcTrendGranularity">
+            <option value="daily">Daily</option>
+            <option value="week">Week on Week</option>
+          </select>
           <select id="dcTrendRegionFilter"><option value="">All Regions</option></select>
           <select id="dcTrendVehicleFilter"><option value="">All Vehicle Types</option></select>
         </span>
@@ -675,11 +683,13 @@ let vendorShareChart = null;
 
 function setupVendorShareChart() {
   setupRegionDcFilter('vendorShareRegionFilter', 'vendorShareDcFilter', renderVendorShareChart);
+  document.getElementById('vendorShareMetric').addEventListener('change', renderVendorShareChart);
 }
 
 function renderVendorShareChart() {
   const region = document.getElementById('vendorShareRegionFilter').value;
   const dc = document.getElementById('vendorShareDcFilter').value;
+  const metric = document.getElementById('vendorShareMetric').value; // 'trips' | 'onsited'
   const dset = new Set(DATES);
 
   const src = RAW.productivity.detail.filter(r =>
@@ -689,8 +699,9 @@ function renderVendorShareChart() {
   );
 
   const map = {};
-  src.forEach(r => { map[r.Vendor] = (map[r.Vendor] || 0) + r.LT_Trips; });
+  src.forEach(r => { map[r.Vendor] = (map[r.Vendor] || 0) + (metric === 'onsited' ? r.Onsited : r.LT_Trips); });
   const vendors = Object.keys(map).filter(v => map[v] > 0).sort((a, b) => map[b] - map[a]);
+  const unitLabel = metric === 'onsited' ? 'onsited units' : 'trips';
 
   if (vendorShareChart) vendorShareChart.destroy();
   vendorShareChart = new Chart(document.getElementById('chartVendorShare'), {
@@ -713,7 +724,7 @@ function renderVendorShareChart() {
             label: ctx => {
               const total = ctx.dataset.data.reduce((s, v) => s + v, 0);
               const pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0';
-              return `${ctx.label}: ${ctx.parsed.toLocaleString()} trips (${pct}%)`;
+              return `${ctx.label}: ${ctx.parsed.toLocaleString()} ${unitLabel} (${pct}%)`;
             }
           }
         }
@@ -808,7 +819,7 @@ function exportPivotCSV(filename, rowLabel, rows, dates) {
   downloadCSV(filename, headers, csvRows);
 }
 
-// ── PRODUCTIVITY TREND CHART (Top 10 DCs, line = DC, x = date) ───────────────
+// ── PRODUCTIVITY TREND CHART (Top 10 DCs + Nationwide, Daily or Week-on-Week) ─
 let dcProductivityChart = null;
 function setupDcProductivityChart() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
@@ -820,18 +831,71 @@ function setupDcProductivityChart() {
   const regionSel = document.getElementById('dcTrendRegionFilter');
   regions.forEach(r => { let o = document.createElement('option'); o.value = r; o.textContent = r; regionSel.appendChild(o); });
   regionSel.addEventListener('change', renderDcProductivityChart);
+
+  document.getElementById('dcTrendGranularity').addEventListener('change', renderDcProductivityChart);
+}
+
+// Buckets a chronological list of date strings into weeks (Monday-start) or,
+// for daily granularity, one date per bucket (a no-op grouping).
+function bucketDatesByGranularity(dates, granularity) {
+  if (granularity !== 'week') return dates.map(dt => [dt]);
+  const buckets = {};
+  dates.forEach(dt => {
+    const d = new Date(dt + 'T00:00:00Z');
+    const diffToMonday = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - diffToMonday);
+    const wk = d.toISOString().slice(0, 10);
+    (buckets[wk] = buckets[wk] || []).push(dt);
+  });
+  return Object.keys(buckets).sort().map(wk => buckets[wk]);
+}
+
+// Sums a {date: {Onsited, LT_Trips}} map over one bucket's dates into a single
+// productivity ratio. Works for both per-DC rows (from pivotByField) and the
+// nationwide per-date totals map, since both share the same per-date shape.
+function aggregateOverBucket(dateMap, bucketDates) {
+  let o = 0, t = 0;
+  bucketDates.forEach(dt => { const c = dateMap[dt] || { Onsited: 0, LT_Trips: 0 }; o += c.Onsited; t += c.LT_Trips; });
+  return o > 0 ? Number((t / o).toFixed(2)) : null;
+}
+
+// Nationwide = ALL DCs regardless of the Region filter (a stable baseline to
+// compare individual regions/DCs against) - only Vehicle Type + Date Window apply.
+function computeNationwideByDate(vt) {
+  const dset = new Set(DATES);
+  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vt || r['Vehicle Type'] === vt));
+  const byDate = {};
+  DATES.forEach(dt => { byDate[dt] = { Onsited: 0, LT_Trips: 0 }; });
+  src.forEach(r => { byDate[r.Date].Onsited += r.Onsited; byDate[r.Date].LT_Trips += r.LT_Trips; });
+  return byDate;
 }
 
 function renderDcProductivityChart() {
   const vt = document.getElementById('dcTrendVehicleFilter').value;
   const region = document.getElementById('dcTrendRegionFilter').value;
+  const granularity = document.getElementById('dcTrendGranularity').value;
   const { dates, rows: allRows } = pivotByField('Origin DC', vt);
   const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
   const top10 = rows.slice(0, 10);
 
-  const datasets = top10.map((r, i) => ({
+  const buckets = bucketDatesByGranularity(dates, granularity);
+  const labels = buckets.map(b => granularity === 'week' ? 'Wk ' + b[0] : b[0]);
+
+  const nationwideByDate = computeNationwideByDate(vt);
+  const nationwideDataset = {
+    label: 'Nationwide (All DCs)',
+    data: buckets.map(b => aggregateOverBucket(nationwideByDate, b)),
+    borderColor: '#1a1a2e',
+    backgroundColor: '#1a1a2e22',
+    borderWidth: 3,
+    pointRadius: 4,
+    spanGaps: true,
+    tension: 0.25, fill: false
+  };
+
+  const dcDatasets = top10.map((r, i) => ({
     label: r.key.replace(' DC', '').replace('Transit Point ', 'TP '),
-    data: dates.map(dt => r[dt].Onsited > 0 ? Number((r[dt].LT_Trips / r[dt].Onsited).toFixed(2)) : null),
+    data: buckets.map(b => aggregateOverBucket(r, b)),
     borderColor: PALETTE[i % PALETTE.length],
     backgroundColor: PALETTE[i % PALETTE.length] + '33',
     spanGaps: true,
@@ -841,7 +905,7 @@ function renderDcProductivityChart() {
   if (dcProductivityChart) dcProductivityChart.destroy();
   dcProductivityChart = new Chart(document.getElementById('chartDcProductivity'), {
     type: 'line',
-    data: { labels: dates, datasets },
+    data: { labels, datasets: [nationwideDataset, ...dcDatasets] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },

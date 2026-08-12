@@ -228,6 +228,7 @@
     <b>Productivity</b> = Daily LT &divide; Daily Onsited.
   </div>
 
+  <div class="subtxt" id="pCardsScopeLabel" style="padding:0 0 10px; font-weight:600; color:#0f3460;"></div>
   <div class="cards">
     <div class="card blue">
       <div class="card-val" id="p-units">–</div>
@@ -621,8 +622,7 @@ function refreshDashboard() {
   buildVendorChart(vendorAgg);
   buildDCChart(dcAgg);
   renderVendorShareChart();
-  buildProductivityCards();
-  renderDcProductivityChart();
+  renderDcProductivityChart(); // also refreshes the productivity cards - see its end
   renderDcShareChart();
   applyProdFilters();
   renderProdByDcDaily();
@@ -741,9 +741,22 @@ function renderVendorShareChart() {
 }
 
 // ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
+// These cards follow the Productivity Trend chart's Region + Vehicle Type
+// filters (so they read as "KPIs for what that chart is currently showing").
+// Region Level mode isn't narrowed to anything comparable, so it falls back
+// to the full nationwide total, same as leaving the Region filter on "All".
 function buildProductivityCards() {
+  const level = document.getElementById('dcTrendLevel').value;
+  const region = document.getElementById('dcTrendRegionFilter').value;
+  const vt = document.getElementById('dcTrendVehicleFilter').value;
+  const scopedToRegion = level === 'dc' && region;
+
   const dset = new Set(DATES);
-  const rows = RAW.productivity.detail.filter(r => dset.has(r.Date));
+  const rows = RAW.productivity.detail.filter(r =>
+    dset.has(r.Date) &&
+    (!vt || r['Vehicle Type'] === vt) &&
+    (!scopedToRegion || RAW.dc_regions[r['Origin DC']] === region)
+  );
   const totalOnsited = rows.reduce((s,r)=>s+r.Onsited,0);
   const totalTrips = rows.reduce((s,r)=>s+r.LT_Trips,0);
   const overall = totalOnsited > 0 ? totalTrips / totalOnsited : null;
@@ -751,6 +764,11 @@ function buildProductivityCards() {
   document.getElementById('p-trips').textContent = totalTrips.toLocaleString();
   document.getElementById('p-avg').textContent = (overall === null ? 0 : overall).toFixed(2);
   document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
+
+  const scopeBits = [scopedToRegion ? region : 'Nationwide'];
+  if (vt) scopeBits.push(vt);
+  document.getElementById('pCardsScopeLabel').textContent =
+    'Currently showing: ' + scopeBits.join(' · ') + ' (follows the Region / Vehicle Type filters on the Productivity Trend chart below)';
 }
 
 // Shared cell formatter: "LT / Onsited -> Productivity" used by the per-DC pivot table
@@ -917,7 +935,7 @@ function renderDcProductivityChart() {
   // Region Level shows every region as its own line, so per-region filtering
   // to a single region would leave nothing to compare - disable it in that mode.
   document.getElementById('dcTrendRegionFilter').disabled = (level === 'region');
-  document.getElementById('dcTrendLevelLabel').textContent = level === 'region' ? 'by Region' : 'by DC (Top 10)';
+  document.getElementById('dcTrendLevelLabel').textContent = level === 'region' ? 'by Region' : (region ? 'by DC' : 'by DC (Top 10)');
 
   let dates, seriesRows;
   if (level === 'region') {
@@ -928,7 +946,9 @@ function renderDcProductivityChart() {
     const { dates: d, rows: allRows } = pivotByField('Origin DC', vt);
     dates = d;
     const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
-    seriesRows = rows.slice(0, 10);
+    // A region narrows the pool enough to show every DC in it; unfiltered
+    // (nationwide) still caps at Top 10 so the chart stays readable.
+    seriesRows = region ? rows : rows.slice(0, 10);
   }
 
   const buckets = bucketDatesByGranularity(dates, granularity);
@@ -968,6 +988,11 @@ function renderDcProductivityChart() {
       }
     }
   });
+
+  // Keep the summary cards in sync with this chart's own filters too, not
+  // just Date Window changes - this is the single place all of its trigger
+  // paths (Date Window refresh, Level/Region/Vehicle Type dropdowns) funnel through.
+  buildProductivityCards();
 }
 
 // ── DC PRODUCTIVITY & VENDOR SHARE ────────────────────────────────────────────

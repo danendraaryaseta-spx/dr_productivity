@@ -741,21 +741,52 @@ function renderVendorShareChart() {
 }
 
 // ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
-// These cards follow the Productivity Trend chart's Region + Vehicle Type
-// filters (so they read as "KPIs for what that chart is currently showing").
-// Region Level mode isn't narrowed to anything comparable, so it falls back
-// to the full nationwide total, same as leaving the Region filter on "All".
-function buildProductivityCards() {
-  const level = document.getElementById('dcTrendLevel').value;
+// Figures out what the Productivity Trend chart is *currently* showing, so the
+// summary cards can match it: which individual lines are checked in its
+// legend (not just the Region filter). Nationwide's own line is never itself
+// a scope target - hiding/showing it doesn't affect the cards.
+function computeTrendScope() {
   const region = document.getElementById('dcTrendRegionFilter').value;
-  const vt = document.getElementById('dcTrendVehicleFilter').value;
-  const scopedToRegion = level === 'dc' && region;
 
+  if (!dcProductivityChart || !dcTrendSeriesKeys.length) {
+    return { keys: null, field: null, label: 'Nationwide' };
+  }
+
+  const visibleKeys = [];
+  dcProductivityChart.data.datasets.forEach((ds, i) => {
+    if (i === 0) return; // dataset 0 is always the Nationwide reference line
+    if (!dcProductivityChart.getDatasetMeta(i).hidden) visibleKeys.push(dcTrendSeriesKeys[i - 1]);
+  });
+  const narrowed = visibleKeys.length < dcTrendSeriesKeys.length; // user unchecked something
+
+  const field = dcTrendLevelAtRender === 'region' ? 'region' : 'dc';
+  if (narrowed) {
+    const label = visibleKeys.length === 0 ? 'None selected'
+      : visibleKeys.length <= 3 ? visibleKeys.map(k => k.replace(' DC', '')).join(', ')
+      : `${visibleKeys.length} selected ${field === 'dc' ? 'DCs' : 'Regions'}`;
+    return { keys: visibleKeys, field, label };
+  }
+
+  // Nothing manually unchecked. DC Level + a Region filter already means
+  // "every DC in that region" (nothing is capped in that case - see
+  // renderDcProductivityChart) so it's an equally deliberate, real scope.
+  if (field === 'dc' && region) return { keys: dcTrendSeriesKeys, field, label: region };
+  // Otherwise (Region Level fully visible, or DC Level's Top-10-nationwide
+  // cap with nothing hidden) there's nothing deliberately narrowed - the
+  // Top 10 is a display cap, not a chosen scope, so fall back to nationwide.
+  return { keys: null, field: null, label: 'Nationwide' };
+}
+
+function buildProductivityCards() {
+  const vt = document.getElementById('dcTrendVehicleFilter').value;
   const dset = new Set(DATES);
+  const scope = computeTrendScope();
+  const scopeSet = scope.keys ? new Set(scope.keys) : null;
+
   const rows = RAW.productivity.detail.filter(r =>
     dset.has(r.Date) &&
     (!vt || r['Vehicle Type'] === vt) &&
-    (!scopedToRegion || RAW.dc_regions[r['Origin DC']] === region)
+    (!scopeSet || scopeSet.has(scope.field === 'dc' ? r['Origin DC'] : (RAW.dc_regions[r['Origin DC']] || 'Unknown')))
   );
   const totalOnsited = rows.reduce((s,r)=>s+r.Onsited,0);
   const totalTrips = rows.reduce((s,r)=>s+r.LT_Trips,0);
@@ -765,10 +796,10 @@ function buildProductivityCards() {
   document.getElementById('p-avg').textContent = (overall === null ? 0 : overall).toFixed(2);
   document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
 
-  const scopeBits = [scopedToRegion ? region : 'Nationwide'];
+  const scopeBits = [scope.label];
   if (vt) scopeBits.push(vt);
   document.getElementById('pCardsScopeLabel').textContent =
-    'Currently showing: ' + scopeBits.join(' · ') + ' (follows the Region / Vehicle Type filters on the Productivity Trend chart below)';
+    'Currently showing: ' + scopeBits.join(' · ') + ' (follows the Region filter and legend checkboxes on the Productivity Trend chart below)';
 }
 
 // Shared cell formatter: "LT / Onsited -> Productivity" used by the per-DC pivot table
@@ -846,6 +877,13 @@ function exportPivotCSV(filename, rowLabel, rows, dates) {
 
 // ── PRODUCTIVITY TREND CHART (Top 10 DCs + Nationwide, Daily or Week-on-Week) ─
 let dcProductivityChart = null;
+// Raw key (DC name or region name) per plotted series, aligned so index i of
+// this array = dataset index i+1 in the chart (dataset 0 is always Nationwide).
+// Lets the legend click handler map "which line did they toggle" back to a
+// real filterable key, since the on-chart label is a shortened display name.
+let dcTrendSeriesKeys = [];
+let dcTrendLevelAtRender = 'dc';
+
 function setupDcProductivityChart() {
   const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
   const sel = document.getElementById('dcTrendVehicleFilter');
@@ -975,13 +1013,29 @@ function renderDcProductivityChart() {
     tension: 0.25, fill: false
   }));
 
+  dcTrendSeriesKeys = seriesRows.map(r => r.key);
+  dcTrendLevelAtRender = level;
+
   if (dcProductivityChart) dcProductivityChart.destroy();
   dcProductivityChart = new Chart(document.getElementById('chartDcProductivity'), {
     type: 'line',
     data: { labels, datasets: [nationwideDataset, ...seriesDatasets] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+      plugins: {
+        legend: {
+          position: 'top', labels: { boxWidth: 12, font: { size: 10 } },
+          // Keep the default show/hide-on-click behavior, but also recompute
+          // the summary cards so checking/unchecking a line updates their scope.
+          onClick: (e, legendItem, legend) => {
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            if (ci.isDatasetVisible(index)) { ci.hide(index); legendItem.hidden = true; }
+            else { ci.show(index); legendItem.hidden = false; }
+            buildProductivityCards();
+          }
+        }
+      },
       scales: {
         x: { ticks: { font: { size: 11 } } },
         y: { beginAtZero: true, title: { display: true, text: 'Productivity (Trips/Onsited)' }, ticks: { font: { size: 11 } } }

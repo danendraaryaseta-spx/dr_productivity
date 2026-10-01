@@ -27,6 +27,7 @@ SHEET_IDS = {
     'FM_SOC': '1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0',
     'ONSITE': '1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y',
     'ORDER': '1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E',
+    'SOC_SOC': '11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU',
 }
 ORDER_HEADER_ROW = 12  # header sits at row 12 on that specific tab as of 7.7 campaign
 
@@ -70,22 +71,27 @@ def to_date_str(v):
 def read_tracker(gc, sheet_id, source_label):
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet('raw')
-    values = ws.get('A2:S')
+    values = ws.get('A1:AZ')
+    header = [str(h).strip().lower() for h in values[0]] if values else []
+    # cost_type is located by header name: SOC-SOC has no such column yet (its column E
+    # is is_changed), and its blanks get filled by tag_socsoc_cost_type().
+    ct_idx = header.index('cost_type') if 'cost_type' in header else None
+    width = max(19, (ct_idx or 0) + 1)
     rows = []
-    for r in values:
-        r = list(r) + [''] * (19 - len(r))
+    for r in values[1:]:
+        r = list(r) + [''] * (width - len(r))
         if not r[3]:
             continue
         rows.append({
             'trip_number': r[3],
-            'cost_type': r[4],
+            'cost_type': r[ct_idx] if ct_idx is not None else '',
             'origin_station': r[5],
             'vehicle_type_name': r[7],
             'trip_atd': r[11],
             'agency_name': r[18],
             'source_sheet': source_label,
         })
-    print(f'  {source_label}: {len(rows)} rows with a trip_number')
+    print(f'  {source_label}: {len(rows)} rows with a trip_number (cost_type column: {"yes" if ct_idx is not None else "no"})')
     return rows
 
 
@@ -93,6 +99,12 @@ def build_trips_first_leg(gc):
     all_rows = []
     for key, label in (('SOC_LM', 'SOC-LM'), ('FM_SOC', 'FM-SOC')):
         all_rows.extend(read_tracker(gc, SHEET_IDS[key], label))
+    try:
+        all_rows.extend(read_tracker(gc, SHEET_IDS['SOC_SOC'], 'SOC-SOC'))
+        socsoc_ok = True
+    except Exception as e:
+        print(f'  SOC-SOC unavailable: {e}')
+        socsoc_ok = False
 
     df = pd.DataFrame(all_rows)
     df['atd_dt'] = pd.to_datetime(df['trip_atd'], errors='coerce')
@@ -112,10 +124,11 @@ def build_trips_first_leg(gc):
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
-    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date']]
+        'source_sheet': 'Source',
+    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Source']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
-    return trips, all_dates
+    return trips, all_dates, socsoc_ok
 
 
 def build_onsite(gc, window_dates):
@@ -153,6 +166,23 @@ def build_onsite(gc, window_dates):
         })
     print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window')
     return pd.DataFrame(rows)
+
+
+def tag_socsoc_cost_type(trips, onsite):
+    # Stopgap until SOC-SOC carries its own cost_type: most DR vendors also run By
+    # Trip/By Month trucks, so vendor name alone can't identify DR. A SOC-SOC trip
+    # with no cost_type counts as "By Day" only when a DR unit of the same
+    # vendor/DC/vehicle type was onsite that date.
+    is_ss = (trips['Source'] == 'SOC-SOC') & (trips['Cost Type'].fillna('').astype(str).str.strip() == '')
+    keys = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date']
+    if len(onsite):
+        dr_keys = set(map(tuple, onsite[keys].drop_duplicates().values))
+    else:
+        dr_keys = set()
+    matched = trips[keys].apply(tuple, axis=1).isin(dr_keys)
+    trips.loc[is_ss, 'Cost Type'] = matched[is_ss].map({True: 'By Day', False: 'Unmatched (SOC-SOC)'})
+    print(f'  SOC-SOC: {int(is_ss.sum())} first-leg trips without cost_type, {int((is_ss & matched).sum())} matched to an onsite DR unit')
+    return trips
 
 
 def build_dc_regions(trips, onsite, order):
@@ -332,12 +362,13 @@ def main():
     print('Connecting to Google Sheets...')
     gc = get_client()
 
-    print('Fetching trip trackers (SOC-LM/FM-SOC)...')
-    trips, window_dates = build_trips_first_leg(gc)
+    print('Fetching trip trackers (SOC-LM/FM-SOC/SOC-SOC)...')
+    trips, window_dates, socsoc_ok = build_trips_first_leg(gc)
     print(f'  Date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Fetching onsite registrations...')
     onsite = build_onsite(gc, window_dates)
+    trips = tag_socsoc_cost_type(trips, onsite)
 
     print('Fetching order sheet...')
     order = build_order(gc)
@@ -362,6 +393,12 @@ def main():
             'source': 'DR order sheet',
             'message': 'Could not be read (likely a sharing/permission issue for the service account). '
                        'Ordered-vs-onsited figures are unavailable; onsited-only figures elsewhere are unaffected.',
+        })
+    if not socsoc_ok:
+        errors.append({
+            'source': 'SOC-SOC trip tracker',
+            'message': 'Could not be read (likely a sharing/permission issue for the service account). '
+                       'SOC-SOC trips are missing, so DR productivity is understated where units ran SOC-SOC.',
         })
     raw['errors'] = errors
 

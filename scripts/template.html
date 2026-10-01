@@ -139,18 +139,20 @@
     <b>Scope of this dashboard:</b> Each LT number is counted once, using only its <b>first leg</b> (the leg with the
     earliest actual departure time, i.e. Origin DC departure). Trip data is pulled on a schedule from the
     <a href="https://docs.google.com/spreadsheets/d/1nLurOQ1JJRRVcyA_-egi32J6nGj9darabA-al3OwG7E" target="_blank" rel="noopener">Linehaul Trip Compliance Tracker [SOC-LM]</a>
-    and <a href="https://docs.google.com/spreadsheets/d/1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0" target="_blank" rel="noopener">[FM-SOC]</a>
-    "raw" tabs (combined, deduped where a trip appears in both). Only legs that had already <b>actually departed</b>
+    , <a href="https://docs.google.com/spreadsheets/d/1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0" target="_blank" rel="noopener">[FM-SOC]</a>
+    and <a href="https://docs.google.com/spreadsheets/d/11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU" target="_blank" rel="noopener">[SOC-SOC]</a>
+    "raw" tabs (combined, deduped where a trip appears in more than one). Only legs that had already <b>actually departed</b>
     and were billed with Cost Type <b>"By Day"</b> (day-rate rented vehicles) and departed from a genuine
     <b>Origin DC</b> (excludes First-Mile feeder legs starting at a collection Hub) are included.
+    The SOC-SOC tracker has no Cost Type column, so a SOC-SOC trip is counted as "By Day" only when a DR unit
+    of the same Vendor, Origin DC and Vehicle Type was onsite that day.
     Full available data spans <b id="dateRangeTxt">–</b>; use the <b>Date Window</b> control below to pick any
     sub-range &mdash; every chart and table updates to that range while still showing daily figures. The most
     recent day is usually partial since it's still in progress at load time.
     <br><br>
-    <b>Known gap:</b> some vendors (notably Abimanyu) show markedly fewer trips under this source than the retired
-    static CSV export did &mdash; the two trackers above may not cover every linehaul route category (e.g. Transit
-    Point SOC&ndash;SOC shuttle runs), so a real vendor may be under-represented here if its routes fall outside
-    SOC-LM/FM-SOC.
+    <b>Known gap:</b> the SOC-SOC tracker only keeps roughly the last 9 days, while SOC-LM/FM-SOC go back further.
+    On older days in the window, SOC-SOC trips are missing, so DR units that ran SOC-SOC on those days can still
+    look under-productive.
   </div>
 
   <!-- Global date window control -->

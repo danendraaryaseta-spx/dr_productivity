@@ -73,8 +73,7 @@ def read_tracker(gc, sheet_id, source_label):
     ws = sh.worksheet('raw')
     values = ws.get('A1:AZ')
     header = [str(h).strip().lower() for h in values[0]] if values else []
-    # cost_type is located by header name: SOC-SOC has no such column yet (its column E
-    # is is_changed), and its blanks get filled by tag_socsoc_cost_type().
+    # cost_type is located by header name: it's column E on SOC-LM/FM-SOC but column T on SOC-SOC.
     ct_idx = header.index('cost_type') if 'cost_type' in header else None
     width = max(19, (ct_idx or 0) + 1)
     rows = []
@@ -91,7 +90,8 @@ def read_tracker(gc, sheet_id, source_label):
             'agency_name': r[18],
             'source_sheet': source_label,
         })
-    print(f'  {source_label}: {len(rows)} rows with a trip_number (cost_type column: {"yes" if ct_idx is not None else "no"})')
+    by_day = sum(1 for r in rows if r['cost_type'] == 'By Day')
+    print(f'  {source_label}: {len(rows)} rows with a trip_number, {by_day} By Day (cost_type column: {"yes" if ct_idx is not None else "MISSING"})')
     return rows
 
 
@@ -124,8 +124,7 @@ def build_trips_first_leg(gc):
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
-        'source_sheet': 'Source',
-    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Source']]
+    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
     return trips, all_dates, socsoc_ok
@@ -166,23 +165,6 @@ def build_onsite(gc, window_dates):
         })
     print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window')
     return pd.DataFrame(rows)
-
-
-def tag_socsoc_cost_type(trips, onsite):
-    # Stopgap until SOC-SOC carries its own cost_type: most DR vendors also run By
-    # Trip/By Month trucks, so vendor name alone can't identify DR. A SOC-SOC trip
-    # with no cost_type counts as "By Day" only when a DR unit of the same
-    # vendor/DC/vehicle type was onsite that date.
-    is_ss = (trips['Source'] == 'SOC-SOC') & (trips['Cost Type'].fillna('').astype(str).str.strip() == '')
-    keys = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date']
-    if len(onsite):
-        dr_keys = set(map(tuple, onsite[keys].drop_duplicates().values))
-    else:
-        dr_keys = set()
-    matched = trips[keys].apply(tuple, axis=1).isin(dr_keys)
-    trips.loc[is_ss, 'Cost Type'] = matched[is_ss].map({True: 'By Day', False: 'Unmatched (SOC-SOC)'})
-    print(f'  SOC-SOC: {int(is_ss.sum())} first-leg trips without cost_type, {int((is_ss & matched).sum())} matched to an onsite DR unit')
-    return trips
 
 
 def build_dc_regions(trips, onsite, order):
@@ -368,7 +350,6 @@ def main():
 
     print('Fetching onsite registrations...')
     onsite = build_onsite(gc, window_dates)
-    trips = tag_socsoc_cost_type(trips, onsite)
 
     print('Fetching order sheet...')
     order = build_order(gc)

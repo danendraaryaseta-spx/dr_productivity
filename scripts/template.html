@@ -229,9 +229,9 @@
     <br><br>
     <b>Finished LT</b> = an LT where every leg has a <code>dest_ata</code>; LTs still on the road are left out of
     the next three measures, since they'd look empty or too short.
-    <b>Empty LT</b> = a finished LT whose pickup and delivery legs &mdash; <b>FM Hub &rarr; SOC</b> and
-    <b>SOC &rarr; LM Hub</b> &mdash; all loaded 0 parcels (<code>total_loaded</code>; blank counts as 0).
-    SOC &rarr; FM and LM &rarr; SOC legs are ignored, since they normally run empty.
+    <b>Empty LT</b> = a finished LT whose pickup and delivery legs were all empty: every <b>FM Hub &rarr; SOC</b>
+    leg arrived at the SOC carrying 0 parcels, and every <b>SOC &rarr; LM Hub</b> leg left the SOC with 0 loaded
+    (<code>total_loaded</code>; blank counts as 0). SOC &rarr; FM and LM &rarr; SOC legs are ignored, since they normally run empty.
     <b>Working Hrs</b> = last leg's <code>dest_ata</code> &minus; first leg's <code>trip_ata</code>, i.e. from the truck
     arriving at its first station to arriving at its final destination.
     <b>Working Hrs per Onsited Unit</b> = total working hours &divide; Daily Onsited.
@@ -419,14 +419,22 @@
   <div class="table-box">
     <h2>4. Empty pickup &amp; delivery legs (0 parcels) &mdash; which SOCs drive them</h2>
     <div class="subtxt">
-      Only legs that should carry parcels are checked, on finished DR LTs:
+      Covers <b>every cost type</b> (In-House, By Day, By Month, By Trip, By Weight), not only DR, and every finished LT
+      including FM pickup routes that start at a hub. Only legs that should carry parcels are checked:
       <b>FM Hub &rarr; SOC</b> (pickup coming in; the SOC is the destination) and
       <b>SOC &rarr; LM Hub</b> (delivery going out; the SOC is the origin). SOC &rarr; FM and LM &rarr; SOC legs are
-      ignored, since they normally run empty. A leg is empty when <code>total_loaded</code> at its origin is 0 or blank.
+      ignored, since they normally run empty. An <b>FM &rarr; SOC</b> leg is empty when the truck <b>arrives at the SOC
+      carrying 0 parcels</b>: nothing loaded at any hub since it last left a SOC (so a multi-stop pickup whose last FM
+      hub had nothing isn't empty if earlier stops gave parcels). A <b>SOC &rarr; LM</b> leg is empty when 0 parcels were
+      loaded at the SOC. <code>total_loaded</code> blank counts as 0.
       <b>Empty rate</b> = empty legs &divide; all legs of that direction at that SOC.
       Follows the Date Window. Click a SOC to list only its empty legs below.
     </div>
     <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Cost Type</label>
+        <select id="elCostType"><option value="">All cost types</option></select>
+      </div>
       <div class="filter-group">
         <label>Vendor</label>
         <select id="elVendor"><option value="">All</option></select>
@@ -472,7 +480,7 @@
       <table>
         <thead>
           <tr>
-            <th>Date</th><th>LT</th><th>Vendor</th><th>Vehicle Type</th><th>Leg</th>
+            <th>Date</th><th>LT</th><th>Cost Type</th><th>Vendor</th><th>Vehicle Type</th><th>Leg</th>
             <th>Route</th><th style="text-align:right">LT Work Hrs</th>
           </tr>
         </thead>
@@ -1516,34 +1524,46 @@ function pChangePage(dir) {
 }
 
 // ── EMPTY PICKUP / DELIVERY LEGS BY SOC ──────────────────────────────────────
-let elSocs = [], elLegs = [], elSelected = null;
+let elSocs = [], elLegs = [], elSelected = null, EL_ROWS = [], EL_LEGS = [];
+const EL_LIST_MAX = 500;
 const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const legLabel = r => r.Direction === 'FM → SOC' ? `${r.Hub} → ${r.SOC}` : `${r.SOC} → ${r.Hub}`;
 
 function setupEmptyLtSection() {
-  const E = RAW.empty_lt || { rows: [], legs: [] };
-  const vSel = document.getElementById('elVendor');
-  [...new Set(E.rows.map(r => r[1]))].sort().forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vSel.appendChild(o); });
-  const rSel = document.getElementById('elRegion');
-  [...new Set(Object.values(RAW.dc_regions))].sort().forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; rSel.appendChild(o); });
-  ['elVendor', 'elRegion', 'elDirection'].forEach(id => document.getElementById(id).addEventListener('change', () => { elSelected = null; renderEmptyLtSection(); }));
+  const E = RAW.empty_lt || { strings: [], rows: [], legs: [] };
+  const S = E.strings;
+  EL_ROWS = E.rows.map(([date, ct, v, soc, d, legs, empty]) =>
+    ({ date, ct: S[ct], vendor: S[v], soc: S[soc], dir: S[d], legs, empty }));
+  EL_LEGS = E.legs.map(([Date, LT, ct, v, vt, d, soc, hub, route, hrs]) => ({
+    Date, LT, 'Cost Type': S[ct], Vendor: S[v], 'Vehicle Type': S[vt], Direction: S[d],
+    SOC: S[soc], Hub: S[hub], Route: S[route], Work_Hrs: hrs,
+  }));
+  const fill = (id, values) => {
+    const sel = document.getElementById(id);
+    values.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  };
+  fill('elCostType', [...new Set(EL_ROWS.map(r => r.ct))].sort());
+  fill('elVendor', [...new Set(EL_ROWS.map(r => r.vendor))].sort());
+  fill('elRegion', [...new Set(Object.values(RAW.dc_regions))].sort());
+  ['elCostType', 'elVendor', 'elRegion', 'elDirection'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => { elSelected = null; renderEmptyLtSection(); }));
 }
 
 function renderEmptyLtSection() {
-  const E = RAW.empty_lt || { rows: [], legs: [] };
   const dset = new Set(DATES);
+  const ct = document.getElementById('elCostType').value;
   const vendor = document.getElementById('elVendor').value;
   const region = document.getElementById('elRegion').value;
   const dir = document.getElementById('elDirection').value;
-  const keep = (date, v, soc, d) => dset.has(date) && (!vendor || v === vendor) && (!dir || d === dir) &&
-    (!region || (RAW.dc_regions[soc] || 'Unknown') === region);
+  const keep = (date, c, v, soc, d) => dset.has(date) && (!ct || c === ct) && (!vendor || v === vendor) &&
+    (!dir || d === dir) && (!region || (RAW.dc_regions[soc] || 'Unknown') === region);
 
-  elLegs = E.legs.filter(r => keep(r.Date, r.Vendor, r.SOC, r.Direction));
+  elLegs = EL_LEGS.filter(r => keep(r.Date, r['Cost Type'], r.Vendor, r.SOC, r.Direction));
   const totalEmpty = elLegs.length;
 
   const map = {};
-  E.rows.forEach(([date, v, soc, d, legs, empty]) => {
-    if (!keep(date, v, soc, d)) return;
+  EL_ROWS.forEach(({ date, ct: c, vendor: v, soc, dir: d, legs, empty }) => {
+    if (!keep(date, c, v, soc, d)) return;
     const k = soc + '|' + d;
     if (!map[k]) map[k] = { soc, dir: d, legs: 0, empty: 0 };
     map[k].legs += legs; map[k].empty += empty;
@@ -1586,19 +1606,21 @@ function renderEmptyLegList() {
   const rows = emptyLegListRows();
   document.getElementById('elListScope').textContent = elSelected ? `— ${elSelected.soc} (${elSelected.dir})` : '';
   document.getElementById('elClearSoc').hidden = !elSelected;
-  document.getElementById('elListCount').textContent = `${rows.length} legs`;
-  document.getElementById('elListBody').innerHTML = rows.length ? rows.map(r => {
+  document.getElementById('elListCount').textContent = rows.length > EL_LIST_MAX
+    ? `${rows.length} legs · showing latest ${EL_LIST_MAX}, Export CSV for all` : `${rows.length} legs`;
+  document.getElementById('elListBody').innerHTML = rows.length ? rows.slice(0, EL_LIST_MAX).map(r => {
     const c = vendorColor(r.Vendor);
     return `<tr>
       <td>${r.Date}</td>
       <td>${escHtml(r.LT)}</td>
+      <td>${escHtml(r['Cost Type'])}</td>
       <td><span class="vendor-tag" style="background:${c}22;color:${c}">${escHtml(r.Vendor)}</span></td>
       <td>${escHtml(r['Vehicle Type'])}</td>
       <td><b>${escHtml(legLabel(r))}</b></td>
       <td style="color:#666">${escHtml(r.Route)}</td>
       <td class="num">${r.Work_Hrs === null ? '–' : r.Work_Hrs.toFixed(1)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="7" class="no-data">No empty pickup or delivery legs in this selection.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="no-data">No empty pickup or delivery legs in this selection.</td></tr>';
 }
 
 function exportEmptyLegSocs() {
@@ -1608,8 +1630,8 @@ function exportEmptyLegSocs() {
 }
 
 function exportEmptyLegList() {
-  downloadCSV('empty_leg_list.csv', ['Date', 'LT', 'Vendor', 'Vehicle Type', 'Direction', 'SOC', 'Hub', 'Route', 'LT Work Hrs'],
-    emptyLegListRows().map(r => [r.Date, r.LT, r.Vendor, r['Vehicle Type'], r.Direction, r.SOC, r.Hub, r.Route, r.Work_Hrs]));
+  downloadCSV('empty_leg_list.csv', ['Date', 'LT', 'Cost Type', 'Vendor', 'Vehicle Type', 'Direction', 'SOC', 'Hub', 'Route', 'LT Work Hrs'],
+    emptyLegListRows().map(r => [r.Date, r.LT, r['Cost Type'], r.Vendor, r['Vehicle Type'], r.Direction, r.SOC, r.Hub, r.Route, r.Work_Hrs]));
 }
 
 // ── ONSITED DR PER VENDOR PER DC, PER DAY ────────────────────────────────────

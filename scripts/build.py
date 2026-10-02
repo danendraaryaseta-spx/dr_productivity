@@ -117,17 +117,26 @@ def build_lt_stats(df):
     # "Empty" only looks at legs that should carry parcels: FM hub -> SOC (pickup coming in)
     # and SOC -> LM hub (delivery going out). SOC -> FM and LM -> SOC normally run empty.
     # total_loaded is what was loaded at that leg's origin; blank counts as 0.
+    #   SOC -> LM is empty when nothing was loaded at the SOC.
+    #   FM -> SOC is empty when the truck arrives carrying nothing: 0 loaded at every hub since
+    #   it last left a SOC. Parcels loaded AT a SOC are deliveries dropped at LM hubs, so they
+    #   don't count - and a multi-stop pickup whose last FM hub had nothing isn't empty.
     kinds = {s: station_kind(s) for s in pd.unique(pd.concat([df['origin_station'], df['dest_station']]))}
     o_kind, d_kind = df['origin_station'].map(kinds), df['dest_station'].map(kinds)
     inbound = (o_kind == 'FM') & (d_kind == 'SOC')
     outbound = (o_kind == 'SOC') & (d_kind == 'LM')
     loaded = pd.to_numeric(df['total_loaded'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+    s = df[['trip_number', 'atd_dt']].sort_values(['trip_number', 'atd_dt'])
+    from_soc = (o_kind.loc[s.index] == 'SOC').values
+    seg = pd.Series(from_soc, index=s.index).groupby(s['trip_number'].values).cumsum()
+    hub_loaded = loaded.loc[s.index].where(~from_soc, 0)
+    on_board = hub_loaded.groupby([s['trip_number'].values, seg.values]).cumsum().reindex(df.index)
     legs = pd.DataFrame({
         'trip_number': df['trip_number'],
         'ata': pd.to_datetime(df['trip_ata'], errors='coerce'),
         'dest_ata': pd.to_datetime(df['dest_ata'], errors='coerce'),
         'relevant': inbound | outbound,
-        'empty_leg': (inbound | outbound) & (loaded == 0),
+        'empty_leg': (inbound & (on_board == 0)) | (outbound & (loaded == 0)),
     })
     lt = legs.groupby('trip_number').agg(
         n_legs=('trip_number', 'size'), n_arrived=('dest_ata', 'count'),
@@ -168,9 +177,11 @@ def build_trips_first_leg(gc):
     first_leg = departed.loc[idx].copy()
 
     first_leg['Date'] = first_leg['atd_dt'].dt.strftime('%Y-%m-%d')
-    first_leg = first_leg[first_leg['origin_station'].astype(str).str.endswith(' DC')]
     lt_stats, rel_legs = build_lt_stats(df)
-    first_leg = first_leg.join(lt_stats, on='trip_number')
+    # Every departed LT, any cost type or starting station - the empty-leg section covers
+    # FM pickup routes that start at a hub too.
+    all_lts = first_leg.join(lt_stats, on='trip_number')
+    first_leg = all_lts[all_lts['origin_station'].astype(str).str.endswith(' DC')]
 
     # No fixed rolling window - the full date range actually present in the
     # trackers is exposed to the client, which lets the user pick any sub-range
@@ -184,7 +195,7 @@ def build_trips_first_leg(gc):
     })[['LT', 'Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Route', 'Finished', 'Empty', 'Work_Hrs']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
-    return trips, all_dates, socsoc_ok, rel_legs
+    return trips, all_dates, socsoc_ok, rel_legs, all_lts
 
 
 def build_onsite(gc, window_dates):
@@ -367,29 +378,44 @@ def build_productivity(trips, onsite, window_dates):
     }
 
 
-def build_empty_lt(trips, rel_legs):
-    # Leg-level view of finished DR LTs: every FM -> SOC and SOC -> LM leg, credited to its
-    # SOC, dated by its LT's first-leg date so it follows the Date Window. Only SOC/direction
-    # pairs with at least one empty leg are shipped - the others never appear in the section.
-    fin = trips[(trips['Cost Type'] == 'By Day') & trips['Finished'].fillna(False).astype(bool)]
-    legs = rel_legs.merge(fin[['LT', 'Date', 'Vendor', 'Vehicle Type', 'Route', 'Work_Hrs']],
-                          left_on='trip_number', right_on='LT')
+def normalize_cost_type(ct):
+    s = str(ct or '').strip()
+    if not s:
+        return 'Unknown'
+    return 'In-House' if s.lower() == 'in-house' else s
+
+
+def build_empty_lt(all_lts, rel_legs):
+    # Leg-level view of finished LTs of every cost type: each FM -> SOC and SOC -> LM leg,
+    # credited to its SOC, dated by its LT's first-leg date so it follows the Date Window.
+    # Only SOC/direction pairs with at least one empty leg are shipped - the others never
+    # appear in the section.
+    fin = all_lts[all_lts['Finished'].fillna(False).astype(bool)][
+        ['trip_number', 'Date', 'agency_name', 'vehicle_type_name', 'cost_type', 'trip_route', 'Work_Hrs']]
+    legs = rel_legs.merge(fin, on='trip_number')
+    legs['cost_type'] = legs['cost_type'].map(normalize_cost_type)
+    legs['agency_name'] = legs['agency_name'].replace('', 'Unknown')
     hot = set(map(tuple, legs.loc[legs['Empty'], ['SOC', 'Direction']].drop_duplicates().values))
     shown = legs[[(s, d) in hot for s, d in zip(legs['SOC'], legs['Direction'])]]
-    g = shown.groupby(['Date', 'Vendor', 'SOC', 'Direction']).agg(
+    g = shown.groupby(['Date', 'cost_type', 'agency_name', 'SOC', 'Direction']).agg(
         Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
 
+    # Repeated names (routes, stations, vendors...) are sent once in `strings` and referenced
+    # by index - otherwise the few thousand empty legs alone add ~800 KB to the page.
+    pool = {}
+    ix = lambda s: pool.setdefault(s, len(pool))
     empty_legs = legs[legs['Empty']].sort_values(['Date', 'SOC'], ascending=[False, True])
-    items = [{
-        'LT': r['LT'], 'Date': r['Date'], 'Vendor': r['Vendor'], 'Vehicle Type': r['Vehicle Type'],
-        'Direction': r['Direction'], 'SOC': r['SOC'], 'Hub': r['Hub'], 'Route': r['Route'],
-        'Work_Hrs': None if pd.isna(r['Work_Hrs']) else round(float(r['Work_Hrs']), 1),
-    } for r in empty_legs.to_dict('records')]
-    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs, {len(items)} empty, {len(hot)} SOC/direction pairs')
+    items = [[r['Date'], r['trip_number'], ix(r['cost_type']), ix(r['agency_name']), ix(r['vehicle_type_name']),
+              ix(r['Direction']), ix(r['SOC']), ix(r['Hub']), ix(r['trip_route']),
+              None if pd.isna(r['Work_Hrs']) else round(float(r['Work_Hrs']), 1)]
+             for r in empty_legs.to_dict('records')]
+    rows = [[d, ix(c), ix(v), ix(s), ix(di), int(n), int(e)] for d, c, v, s, di, n, e in g.itertuples(index=False)]
+    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs (all cost types), {len(items)} empty, '
+          f'{len(hot)} SOC/direction pairs, {len(rows)} rows')
     return {
-        'cols': ['Date', 'Vendor', 'SOC', 'Direction', 'Legs', 'Empty'],
-        'rows': [[d, v, s, di, int(n), int(e)] for d, v, s, di, n, e in g.itertuples(index=False)],
-        'legs': items,
+        'strings': list(pool),
+        'rows': rows,    # Date, Cost Type*, Vendor*, SOC*, Direction*, Legs, Empty   (* = index into strings)
+        'legs': items,   # Date, LT, Cost Type*, Vendor*, Vehicle Type*, Direction*, SOC*, Hub*, Route*, Work_Hrs
     }
 
 
@@ -445,7 +471,7 @@ def main():
     gc = get_client()
 
     print('Fetching trip trackers (SOC-LM/FM-SOC/SOC-SOC)...')
-    trips, window_dates, socsoc_ok, rel_legs = build_trips_first_leg(gc)
+    trips, window_dates, socsoc_ok, rel_legs, all_lts = build_trips_first_leg(gc)
     print(f'  Date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Fetching onsite registrations...')
@@ -462,7 +488,7 @@ def main():
 
     raw = dict(dashboard)
     raw['productivity'] = productivity
-    raw['empty_lt'] = build_empty_lt(trips, rel_legs)
+    raw['empty_lt'] = build_empty_lt(all_lts, rel_legs)
     raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
     raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
     raw['dc_regions'] = dc_regions

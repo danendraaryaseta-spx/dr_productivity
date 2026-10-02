@@ -413,6 +413,70 @@
     </div>
   </div>
 
+  <!-- 4. Empty LTs (0 parcels) by station -->
+  <div class="table-box">
+    <h2>4. Empty LTs (0 parcels) &mdash; which stations drive them</h2>
+    <div class="subtxt">
+      Finished DR LTs with 0 parcels loaded on every leg. Each LT counts toward its <b>Origin</b> DC and toward every
+      other station it stopped at (<b>Destination</b>; the final stop is usually the origin again, so the stops in
+      between are what matter). <b>Empty rate</b> = empty LTs &divide; all finished DR LTs at that station in the same role.
+      Follows the Date Window. Click a station to list only its LTs below.
+    </div>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <div class="filter-group">
+        <label>Vendor</label>
+        <select id="elVendor"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Region (of origin DC)</label>
+        <select id="elRegion"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Role</label>
+        <select id="elRole">
+          <option value="">Origin + Destination</option>
+          <option value="Origin">As Origin</option>
+          <option value="Destination">As Destination</option>
+        </select>
+      </div>
+      <button class="export-btn" onclick="exportEmptyLtStations()">⬇ Export CSV</button>
+      <span class="result-count" id="elStationCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Station</th>
+            <th>Role</th>
+            <th style="text-align:right">Empty LTs</th>
+            <th style="text-align:right">All finished DR LTs</th>
+            <th style="text-align:right">Empty rate</th>
+            <th style="text-align:right">Share of all empty LTs</th>
+          </tr>
+        </thead>
+        <tbody id="elStationBody"></tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:8px;">Empty LT list <span id="elListScope" style="font-weight:600; font-size:0.85rem; color:#e94560;"></span></h2>
+    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
+      <button class="reset-btn" id="elClearStation" onclick="selectEmptyLtStation(null)" hidden>Show all stations</button>
+      <button class="export-btn" onclick="exportEmptyLtList()">⬇ Export CSV</button>
+      <span class="result-count" id="elListCount"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>LT</th><th>Vendor</th><th>Vehicle Type</th><th>Origin DC</th>
+            <th>Stops (excl. origin)</th><th>Route</th><th style="text-align:right">Work Hrs</th>
+          </tr>
+        </thead>
+        <tbody id="elListBody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Onsited DR per Vendor per DC -->
   <div class="table-box">
     <h2>Onsited DR &mdash; per Vendor, per Origin DC
@@ -598,6 +662,7 @@ function initDashboard() {
   setupProdDetailTable();
   setupVendorDcOnsitedTable();
   setupOrderedVsOnsiteTable();
+  setupEmptyLtSection();
 
   setupRegionDcFilter('fpRegion', 'fpDc', applyProdFilters);
   setupRegionDcFilter('pdcRegion', 'pdcDc', renderProdByDcDaily);
@@ -652,6 +717,7 @@ function refreshDashboard() {
   applyProdFilters();
   renderProdByDcDaily();
   renderProdByVendorDaily();
+  renderEmptyLtSection();
   renderVendorDcOnsitedTable();
   ovoRenderTable();
 }
@@ -1443,6 +1509,110 @@ function exportProdDetail() {
 function pChangePage(dir) {
   pPage += dir;
   pRenderTable();
+}
+
+// ── EMPTY LTs BY STATION ─────────────────────────────────────────────────────
+let elStations = [], elLts = [], elSelected = null;
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function setupEmptyLtSection() {
+  const E = RAW.empty_lt || { cols: [], rows: [], lts: [] };
+  const vendors = [...new Set(E.lts.map(r => r.Vendor))].sort();
+  const vSel = document.getElementById('elVendor');
+  vendors.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vSel.appendChild(o); });
+  const rSel = document.getElementById('elRegion');
+  [...new Set(Object.values(RAW.dc_regions))].sort().forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; rSel.appendChild(o); });
+  ['elVendor', 'elRegion', 'elRole'].forEach(id => document.getElementById(id).addEventListener('change', () => { elSelected = null; renderEmptyLtSection(); }));
+}
+
+function emptyLtFilters() {
+  return {
+    dset: new Set(DATES),
+    vendor: document.getElementById('elVendor').value,
+    region: document.getElementById('elRegion').value,
+    role: document.getElementById('elRole').value,
+  };
+}
+
+function renderEmptyLtSection() {
+  const E = RAW.empty_lt || { cols: [], rows: [], lts: [] };
+  const f = emptyLtFilters();
+  const regionOk = dc => !f.region || (RAW.dc_regions[dc] || 'Unknown') === f.region;
+
+  elLts = E.lts.filter(r => f.dset.has(r.Date) && (!f.vendor || r.Vendor === f.vendor) && regionOk(r['Origin DC']));
+  const totalEmpty = elLts.length;
+
+  const map = {};
+  E.rows.forEach(([date, vendor, origin, station, role, finished, empty]) => {
+    if (!f.dset.has(date) || (f.vendor && vendor !== f.vendor) || !regionOk(origin) || (f.role && role !== f.role)) return;
+    const k = station + '|' + role;
+    if (!map[k]) map[k] = { station, role, finished: 0, empty: 0 };
+    map[k].finished += finished; map[k].empty += empty;
+  });
+  elStations = Object.values(map).filter(r => r.empty > 0)
+    .sort((a, b) => b.empty - a.empty || b.empty / b.finished - a.empty / a.finished);
+
+  document.getElementById('elStationCount').textContent = `${elStations.length} stations · ${totalEmpty} empty LTs`;
+  const body = document.getElementById('elStationBody');
+  body.innerHTML = elStations.length ? elStations.map((r, i) => {
+    const sel = elSelected && elSelected.station === r.station && elSelected.role === r.role;
+    const rate = 100 * r.empty / r.finished;
+    return `<tr data-i="${i}" style="cursor:pointer;${sel ? 'background:#fff1f3;' : ''}">
+      <td><b>${escHtml(r.station)}</b></td>
+      <td>${r.role}</td>
+      <td class="num" style="color:#e94560;font-weight:800">${r.empty}</td>
+      <td class="num">${r.finished}</td>
+      <td class="num"${rate >= 10 ? ' style="color:#e94560;font-weight:700"' : ''}>${rate.toFixed(1)}%</td>
+      <td class="num">${totalEmpty ? (100 * r.empty / totalEmpty).toFixed(1) + '%' : '–'}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="no-data">No empty LTs in this selection.</td></tr>';
+  body.querySelectorAll('tr[data-i]').forEach(tr => tr.addEventListener('click', () => {
+    const r = elStations[+tr.dataset.i];
+    const same = elSelected && elSelected.station === r.station && elSelected.role === r.role;
+    selectEmptyLtStation(same ? null : { station: r.station, role: r.role });
+  }));
+  renderEmptyLtList();
+}
+
+function selectEmptyLtStation(sel) {
+  elSelected = sel;
+  renderEmptyLtSection();
+}
+
+function emptyLtListRows() {
+  if (!elSelected) return elLts;
+  return elLts.filter(r => elSelected.role === 'Origin' ? r['Origin DC'] === elSelected.station : r.Stops.includes(elSelected.station));
+}
+
+function renderEmptyLtList() {
+  const rows = emptyLtListRows();
+  document.getElementById('elListScope').textContent = elSelected ? `— ${elSelected.station} (as ${elSelected.role})` : '';
+  document.getElementById('elClearStation').hidden = !elSelected;
+  document.getElementById('elListCount').textContent = `${rows.length} LTs`;
+  document.getElementById('elListBody').innerHTML = rows.length ? rows.map(r => {
+    const c = vendorColor(r.Vendor);
+    return `<tr>
+      <td>${r.Date}</td>
+      <td>${escHtml(r.LT)}</td>
+      <td><span class="vendor-tag" style="background:${c}22;color:${c}">${escHtml(r.Vendor)}</span></td>
+      <td>${escHtml(r['Vehicle Type'])}</td>
+      <td>${escHtml(r['Origin DC'])}</td>
+      <td>${escHtml(r.Stops.join(' → '))}</td>
+      <td style="color:#666">${escHtml(r.Route)}</td>
+      <td class="num">${r.Work_Hrs === null ? '–' : r.Work_Hrs.toFixed(1)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="no-data">No empty LTs in this selection.</td></tr>';
+}
+
+function exportEmptyLtStations() {
+  const total = elLts.length;
+  downloadCSV('empty_lt_by_station.csv', ['Station', 'Role', 'Empty LTs', 'All finished DR LTs', 'Empty rate %', 'Share of all empty LTs %'],
+    elStations.map(r => [r.station, r.role, r.empty, r.finished, (100 * r.empty / r.finished).toFixed(1), total ? (100 * r.empty / total).toFixed(1) : '']));
+}
+
+function exportEmptyLtList() {
+  downloadCSV('empty_lt_list.csv', ['Date', 'LT', 'Vendor', 'Vehicle Type', 'Origin DC', 'Stops (excl. origin)', 'Route', 'Work Hrs'],
+    emptyLtListRows().map(r => [r.Date, r.LT, r.Vendor, r['Vehicle Type'], r['Origin DC'], r.Stops.join(' > '), r.Route, r.Work_Hrs]));
 }
 
 // ── ONSITED DR PER VENDOR PER DC, PER DAY ────────────────────────────────────

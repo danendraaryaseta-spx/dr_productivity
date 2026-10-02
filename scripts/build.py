@@ -83,8 +83,10 @@ def read_tracker(gc, sheet_id, source_label):
             continue
         rows.append({
             'trip_number': r[3],
+            'trip_route': r[1],
             'cost_type': r[ct_idx] if ct_idx is not None else '',
             'origin_station': r[5],
+            'dest_station': r[6],
             'vehicle_type_name': r[7],
             'total_loaded': r[8],
             'trip_atd': r[11],
@@ -114,10 +116,14 @@ def build_lt_stats(df):
     )
     hrs = (lt['last_dest_ata'] - lt['first_ata']).dt.total_seconds() / 3600
     finished = (lt['n_arrived'] == lt['n_legs']) & (hrs >= 0)
+    # Stations visited, in departure order - only needed for DR LTs (empty-LT section).
+    byday_legs = df[df['cost_type'] == 'By Day'].sort_values('atd_dt')
+    stops = byday_legs.groupby('trip_number', sort=False)['dest_station'].agg(lambda s: list(dict.fromkeys(s)))
     return pd.DataFrame({
         'Finished': finished,
         'Empty': finished & (lt['loaded'] == 0),
         'Work_Hrs': hrs.where(finished),
+        'Stops': stops,
     })
 
 
@@ -151,7 +157,8 @@ def build_trips_first_leg(gc):
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
-    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Finished', 'Empty', 'Work_Hrs']]
+        'trip_number': 'LT', 'trip_route': 'Route',
+    })[['LT', 'Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Route', 'Finished', 'Empty', 'Work_Hrs', 'Stops']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
     return trips, all_dates, socsoc_ok
@@ -337,6 +344,40 @@ def build_productivity(trips, onsite, window_dates):
     }
 
 
+def build_empty_lt(trips):
+    # Each finished DR LT credits its origin DC (role "Origin") and every other station it
+    # stopped at (role "Destination" - the final stop is usually the origin again, so the
+    # stops in between are what's informative). Only station/role pairs with at least one
+    # empty LT are shipped, since stations with none never appear in the section.
+    fin = trips[(trips['Cost Type'] == 'By Day') & trips['Finished'].fillna(False).astype(bool)]
+    recs = []
+    for r in fin.to_dict('records'):
+        origin, empty = r['Origin DC'], bool(r['Empty'])
+        recs.append((r['Date'], r['Vendor'], origin, origin, 'Origin', empty))
+        for st in r['Stops'] if isinstance(r['Stops'], list) else []:
+            if st != origin:
+                recs.append((r['Date'], r['Vendor'], origin, st, 'Destination', empty))
+    df = pd.DataFrame(recs, columns=['Date', 'Vendor', 'Origin DC', 'Station', 'Role', 'Empty'])
+    hot = set(map(tuple, df.loc[df['Empty'], ['Station', 'Role']].drop_duplicates().values))
+    df = df[[(s, ro) in hot for s, ro in zip(df['Station'], df['Role'])]]
+    g = df.groupby(['Date', 'Vendor', 'Origin DC', 'Station', 'Role']).agg(
+        Finished=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
+
+    empty_lts = fin[fin['Empty'].astype(bool)].sort_values(['Date', 'Origin DC'], ascending=[False, True])
+    lts = [{
+        'LT': r['LT'], 'Date': r['Date'], 'Vendor': r['Vendor'], 'Vehicle Type': r['Vehicle Type'],
+        'Origin DC': r['Origin DC'], 'Route': r['Route'],
+        'Stops': [s for s in (r['Stops'] if isinstance(r['Stops'], list) else []) if s != r['Origin DC']],
+        'Work_Hrs': None if pd.isna(r['Work_Hrs']) else round(float(r['Work_Hrs']), 1),
+    } for r in empty_lts.to_dict('records')]
+    print(f'  Empty LT section: {len(lts)} empty LTs, {len(hot)} station/role pairs, {len(g)} rows')
+    return {
+        'cols': ['Date', 'Vendor', 'Origin DC', 'Station', 'Role', 'Finished', 'Empty'],
+        'rows': [[d, v, o, s, ro, int(f), int(e)] for d, v, o, s, ro, f, e in g.itertuples(index=False)],
+        'lts': lts,
+    }
+
+
 def build_ordered_vs_onsite(order, onsite, window_dates):
     if order is None:
         return {'rows': [], 'daily': {'dates': window_dates, 'rows': []}}
@@ -406,6 +447,7 @@ def main():
 
     raw = dict(dashboard)
     raw['productivity'] = productivity
+    raw['empty_lt'] = build_empty_lt(trips)
     raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
     raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
     raw['dc_regions'] = dc_regions

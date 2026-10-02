@@ -226,6 +226,13 @@
     registered more than once on the same day, it counts once. Rows without a Nopol filled in count individually.
     <b>Daily LT (using DR)</b> = first-leg trips that had actually departed, billed Cost Type "By Day".
     <b>Productivity</b> = Daily LT &divide; Daily Onsited.
+    <br><br>
+    <b>Finished LT</b> = an LT where every leg has a <code>dest_ata</code>; LTs still on the road are left out of
+    the next three measures, since they'd look empty or too short.
+    <b>Empty LT</b> = a finished LT with 0 parcels loaded across all its legs (<code>total_loaded</code>; blank counts as 0).
+    <b>Working Hrs</b> = last leg's <code>dest_ata</code> &minus; first leg's <code>trip_ata</code>, i.e. from the truck
+    arriving at its first station to arriving at its final destination.
+    <b>Working Hrs per Onsited Unit</b> = total working hours &divide; Daily Onsited.
   </div>
 
   <div class="subtxt" id="pCardsScopeLabel" style="padding:0 0 10px; font-weight:600; color:#0f3460;"></div>
@@ -245,6 +252,22 @@
     <div class="card gold">
       <div class="card-val" id="p-avgday">–</div>
       <div class="card-lbl">Avg Onsited Units per Day</div>
+    </div>
+    <div class="card red">
+      <div class="card-val" id="p-empty">–</div>
+      <div class="card-lbl">Empty LTs (0 parcels on every leg)</div>
+    </div>
+    <div class="card blue">
+      <div class="card-val" id="p-hrs">–</div>
+      <div class="card-lbl">Avg Working Hrs per LT</div>
+    </div>
+    <div class="card green">
+      <div class="card-val" id="p-hrsunit">–</div>
+      <div class="card-lbl">Working Hrs per Onsited Unit (per day)</div>
+    </div>
+    <div class="card gold">
+      <div class="card-val" id="p-finished">–</div>
+      <div class="card-lbl">Finished LTs (basis for the 3 cards before)</div>
     </div>
   </div>
 
@@ -356,6 +379,8 @@
             <th onclick="pSortBy('Onsited')" style="text-align:right">Daily Onsited <span class="sort-icon" id="ps-Onsited">↕</span></th>
             <th onclick="pSortBy('LT_Trips')" style="text-align:right">Daily LT using DR <span class="sort-icon" id="ps-LT_Trips">↓</span></th>
             <th onclick="pSortBy('Productivity')" style="text-align:right">Productivity <span class="sort-icon" id="ps-Productivity">↕</span></th>
+            <th onclick="pSortBy('Empty_LT')" style="text-align:right">Empty LT <span class="sort-icon" id="ps-Empty_LT">↕</span></th>
+            <th onclick="pSortBy('Avg_Work_Hrs')" style="text-align:right">Avg Work Hrs <span class="sort-icon" id="ps-Avg_Work_Hrs">↕</span></th>
           </tr>
         </thead>
         <tbody id="pDetailTableBody"></tbody>
@@ -795,6 +820,13 @@ function buildProductivityCards() {
   document.getElementById('p-trips').textContent = totalTrips.toLocaleString();
   document.getElementById('p-avg').textContent = (overall === null ? 0 : overall).toFixed(2);
   document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
+  const finished = rows.reduce((s,r)=>s+(r.Finished_LT||0),0);
+  const empty = rows.reduce((s,r)=>s+(r.Empty_LT||0),0);
+  const hrs = rows.reduce((s,r)=>s+(r.Work_Hrs||0),0);
+  document.getElementById('p-empty').textContent = finished ? `${empty.toLocaleString()} (${(100 * empty / finished).toFixed(1)}%)` : '–';
+  document.getElementById('p-hrs').textContent = finished ? (hrs / finished).toFixed(1) : '–';
+  document.getElementById('p-hrsunit').textContent = totalOnsited ? (hrs / totalOnsited).toFixed(1) : '–';
+  document.getElementById('p-finished').textContent = finished.toLocaleString();
 
   const scopeBits = [scope.label];
   if (vt) scopeBits.push(vt);
@@ -1378,7 +1410,7 @@ function pRenderTable() {
   document.getElementById('pBtnNext').disabled = pPage >= pages;
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="no-data">No data matches your filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="no-data">No data matches your filters.</td></tr>';
     return;
   }
 
@@ -1393,14 +1425,18 @@ function pRenderTable() {
       <td class="num">${r.Onsited}</td>
       <td class="num">${r.LT_Trips}</td>
       <td class="num" style="font-weight:800">${prodTxt}</td>
+      <td class="num"${r.Empty_LT ? ' style="color:#e94560;font-weight:700"' : ''}>${r.Empty_LT || 0}</td>
+      <td class="num">${r.Avg_Work_Hrs === null || r.Avg_Work_Hrs === undefined ? '–' : r.Avg_Work_Hrs.toFixed(1)}</td>
     </tr>`;
   }).join('');
 }
 
 function exportProdDetail() {
-  const headers = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date', 'Daily Onsited', 'Daily LT using DR', 'Productivity'];
+  const headers = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date', 'Daily Onsited', 'Daily LT using DR', 'Productivity',
+    'Finished LT', 'Empty LT', 'Total Work Hrs', 'Avg Work Hrs'];
+  const blank = v => v === null || v === undefined ? '' : v;
   const rows = pFiltered.map(r => [r.Vendor, r['Origin DC'], r['Vehicle Type'], r.Date, r.Onsited, r.LT_Trips,
-    r.Productivity === null || r.Productivity === undefined ? '' : r.Productivity]);
+    blank(r.Productivity), r.Finished_LT || 0, r.Empty_LT || 0, blank(r.Work_Hrs), blank(r.Avg_Work_Hrs)]);
   downloadCSV('vendor_dc_daily_onsited_lt.csv', headers, rows);
 }
 

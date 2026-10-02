@@ -86,13 +86,39 @@ def read_tracker(gc, sheet_id, source_label):
             'cost_type': r[ct_idx] if ct_idx is not None else '',
             'origin_station': r[5],
             'vehicle_type_name': r[7],
+            'total_loaded': r[8],
             'trip_atd': r[11],
+            'trip_ata': r[13],
+            'dest_ata': r[17],
             'agency_name': r[18],
             'source_sheet': source_label,
         })
     by_day = sum(1 for r in rows if r['cost_type'] == 'By Day')
     print(f'  {source_label}: {len(rows)} rows with a trip_number, {by_day} By Day (cost_type column: {"yes" if ct_idx is not None else "MISSING"})')
     return rows
+
+
+def build_lt_stats(df):
+    # Judged over every leg of the LT, departed or not. Only finished LTs (every leg has a
+    # dest_ata) count, since an in-progress LT would look empty or too short. Loaded is
+    # usually filled on just one leg, so blank counts as 0 and "empty" means 0 on all legs.
+    legs = pd.DataFrame({
+        'trip_number': df['trip_number'],
+        'ata': pd.to_datetime(df['trip_ata'], errors='coerce'),
+        'dest_ata': pd.to_datetime(df['dest_ata'], errors='coerce'),
+        'loaded': pd.to_numeric(df['total_loaded'].astype(str).str.replace(',', ''), errors='coerce').fillna(0),
+    })
+    lt = legs.groupby('trip_number').agg(
+        n_legs=('trip_number', 'size'), n_arrived=('dest_ata', 'count'), loaded=('loaded', 'sum'),
+        first_ata=('ata', 'min'), last_dest_ata=('dest_ata', 'max'),
+    )
+    hrs = (lt['last_dest_ata'] - lt['first_ata']).dt.total_seconds() / 3600
+    finished = (lt['n_arrived'] == lt['n_legs']) & (hrs >= 0)
+    return pd.DataFrame({
+        'Finished': finished,
+        'Empty': finished & (lt['loaded'] == 0),
+        'Work_Hrs': hrs.where(finished),
+    })
 
 
 def build_trips_first_leg(gc):
@@ -115,6 +141,7 @@ def build_trips_first_leg(gc):
 
     first_leg['Date'] = first_leg['atd_dt'].dt.strftime('%Y-%m-%d')
     first_leg = first_leg[first_leg['origin_station'].astype(str).str.endswith(' DC')]
+    first_leg = first_leg.join(build_lt_stats(df), on='trip_number')
 
     # No fixed rolling window - the full date range actually present in the
     # trackers is exposed to the client, which lets the user pick any sub-range
@@ -124,7 +151,7 @@ def build_trips_first_leg(gc):
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
-    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date']]
+    })[['Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Finished', 'Empty', 'Work_Hrs']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
     return trips, all_dates, socsoc_ok
@@ -252,7 +279,10 @@ def clean_nan(records):
 
 def build_productivity(trips, onsite, window_dates):
     byday = trips[trips['Cost Type'] == 'By Day'].copy()
-    trip_counts = byday.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date']).size().reset_index(name='LT_Trips')
+    trip_counts = byday.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date']).agg(
+        LT_Trips=('Date', 'size'), Finished_LT=('Finished', 'sum'),
+        Empty_LT=('Empty', 'sum'), Work_Hrs=('Work_Hrs', 'sum'),
+    ).reset_index()
 
     if len(onsite):
         onsite_counts = onsite.groupby(['Vendor', 'Origin DC', 'Vehicle Type', 'Date'])['unit_key'].nunique().reset_index(name='Onsited')
@@ -261,15 +291,22 @@ def build_productivity(trips, onsite, window_dates):
 
     merged = trip_counts.merge(onsite_counts, on=['Vendor', 'Origin DC', 'Vehicle Type', 'Date'], how='outer').fillna(0)
     merged['Onsited'] = merged['Onsited'].astype(int)
-    merged['LT_Trips'] = merged['LT_Trips'].astype(int)
-    onsited_f = merged['Onsited'].astype(float).replace(0, float('nan'))
-    merged['Productivity'] = (merged['LT_Trips'] / onsited_f).round(2)
-    merged = merged.sort_values('LT_Trips', ascending=False)
+    for col in ('LT_Trips', 'Finished_LT', 'Empty_LT'):
+        merged[col] = merged[col].astype(int)
+    merged['Work_Hrs'] = merged['Work_Hrs'].astype(float).round(2)
+
+    def add_ratios(g):
+        g['Productivity'] = (g['LT_Trips'] / g['Onsited'].replace(0, float('nan'))).round(2)
+        g['Avg_Work_Hrs'] = (g['Work_Hrs'] / g['Finished_LT'].replace(0, float('nan'))).round(1)
+        return g
+
+    merged = add_ratios(merged).sort_values('LT_Trips', ascending=False)
 
     def agg(keys):
-        g = merged.groupby(keys).agg(Onsited=('Onsited', 'sum'), LT_Trips=('LT_Trips', 'sum')).reset_index()
-        g['Productivity'] = (g['LT_Trips'] / g['Onsited'].replace(0, float('nan'))).round(2)
-        return g
+        return add_ratios(merged.groupby(keys).agg(
+            Onsited=('Onsited', 'sum'), LT_Trips=('LT_Trips', 'sum'), Finished_LT=('Finished_LT', 'sum'),
+            Empty_LT=('Empty_LT', 'sum'), Work_Hrs=('Work_Hrs', 'sum'),
+        ).reset_index())
 
     by_vendor = agg(['Vendor']).sort_values('LT_Trips', ascending=False)
     by_dc = agg(['Origin DC']).sort_values('LT_Trips', ascending=False)
@@ -279,12 +316,19 @@ def build_productivity(trips, onsite, window_dates):
     total_onsited = int(merged['Onsited'].sum())
     total_trips = int(merged['LT_Trips'].sum())
     overall = round(total_trips / total_onsited, 2) if total_onsited else None
+    total_finished = int(merged['Finished_LT'].sum())
+    total_empty = int(merged['Empty_LT'].sum())
+    avg_hrs = round(merged['Work_Hrs'].sum() / total_finished, 1) if total_finished else None
+    print(f'  DR LTs: {total_finished} finished, {total_empty} empty (0 parcels), avg working hrs {avg_hrs}')
 
     return {
         'dates': window_dates,
         'total_onsited': total_onsited,
         'total_trips': total_trips,
         'overall_productivity': overall,
+        'total_finished_lt': total_finished,
+        'total_empty_lt': total_empty,
+        'avg_work_hrs': avg_hrs,
         'by_vendor': clean_nan(by_vendor.to_dict('records')),
         'by_dc': clean_nan(by_dc.to_dict('records')),
         'by_date': clean_nan(by_date.to_dict('records')),

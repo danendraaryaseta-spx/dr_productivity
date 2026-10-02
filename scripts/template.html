@@ -229,9 +229,10 @@
     <br><br>
     <b>Finished LT</b> = an LT where every leg has a <code>dest_ata</code>; LTs still on the road are left out of
     the next three measures, since they'd look empty or too short.
-    <b>Empty LT</b> = a finished LT whose pickup and delivery legs were all empty: every <b>FM Hub &rarr; SOC</b>
-    leg arrived at the SOC carrying 0 parcels, and every <b>SOC &rarr; LM Hub</b> leg left the SOC with 0 loaded
-    (<code>total_loaded</code>; blank counts as 0). SOC &rarr; FM and LM &rarr; SOC legs are ignored, since they normally run empty.
+    <b>Empty LT</b> = a finished LT whose pickup and delivery legs were all empty, using the same rules as
+    section 4 below (pickup: arrived at the SOC carrying 0 parcels; delivery: 0 loaded at the SOC and 0 unloaded
+    at its hubs). SOC &rarr; FM and LM &rarr; SOC legs are ignored, since they normally run empty.
+    "Not Depart" legs are ignored throughout.
     <b>Working Hrs</b> = last leg's <code>dest_ata</code> &minus; first leg's <code>trip_ata</code>, i.e. from the truck
     arriving at its first station to arriving at its final destination.
     <b>Working Hrs per Onsited Unit</b> = total working hours &divide; Daily Onsited.
@@ -419,14 +420,20 @@
   <div class="table-box">
     <h2>4. Empty pickup &amp; delivery legs (0 parcels) &mdash; which SOCs drive them</h2>
     <div class="subtxt">
-      Covers <b>every cost type</b> (In-House, By Day, By Month, By Trip, By Weight), not only DR, and every finished LT
-      including FM pickup routes that start at a hub. Only legs that should carry parcels are checked:
+      Covers <b>every cost type</b> (In-House, By Day, By Month, By Trip, By Weight), not only DR, and every LT
+      including FM pickup routes that start at a hub. Legs with status <b>"Not Depart"</b> are ignored, and a leg
+      listed in more than one tracker counts once. Only legs that should carry parcels are checked:
       <b>FM Hub &rarr; SOC</b> (pickup coming in; the SOC is the destination) and
       <b>SOC &rarr; LM Hub</b> (delivery going out; the SOC is the origin). SOC &rarr; FM and LM &rarr; SOC legs are
-      ignored, since they normally run empty. An <b>FM &rarr; SOC</b> leg is empty when the truck <b>arrives at the SOC
-      carrying 0 parcels</b>: nothing loaded at any hub since it last left a SOC (so a multi-stop pickup whose last FM
-      hub had nothing isn't empty if earlier stops gave parcels). A <b>SOC &rarr; LM</b> leg is empty when 0 parcels were
-      loaded at the SOC. <code>total_loaded</code> blank counts as 0.
+      ignored, since they normally run empty. <code>total_loaded</code> / <code>total_unloaded</code> belong to the
+      leg's origin station; blank counts as 0.
+      An <b>FM &rarr; SOC</b> leg is empty when the truck <b>arrives at the SOC carrying 0 parcels</b>: nothing loaded at
+      any hub since it last left a SOC (so a multi-stop pickup whose last FM hub had nothing isn't empty if earlier
+      stops gave parcels).
+      A <b>SOC &rarr; LM</b> leg is empty when <b>0 parcels were loaded at the SOC and 0 were unloaded at every hub</b> on
+      that delivery run (until the truck reaches the next SOC). Both are required because hubs often leave
+      <code>total_unloaded</code> blank even on full runs. Judged only once the run has arrived, since unloaded is
+      filled in after arrival.
       <b>Empty rate</b> = empty legs &divide; all legs of that direction at that SOC.
       Follows the Date Window. Click a SOC to list only its empty legs below.
     </div>

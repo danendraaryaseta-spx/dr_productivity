@@ -89,8 +89,11 @@ def read_tracker(gc, sheet_id, source_label):
             'dest_station': r[6],
             'vehicle_type_name': r[7],
             'total_loaded': r[8],
+            'total_unloaded': r[9],
+            'trip_std': r[10],
             'trip_atd': r[11],
             'trip_ata': r[13],
+            'trip_status': r[15],
             'dest_ata': r[17],
             'agency_name': r[18],
             'source_sheet': source_label,
@@ -111,50 +114,61 @@ def station_kind(name):
     return 'Other'
 
 
+def to_num(col):
+    return pd.to_numeric(col.astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+
+
 def build_lt_stats(df):
-    # Only finished LTs (every leg, departed or not, has a dest_ata) are judged, since an
-    # in-progress LT would look empty or too short.
-    # "Empty" only looks at legs that should carry parcels: FM hub -> SOC (pickup coming in)
-    # and SOC -> LM hub (delivery going out). SOC -> FM and LM -> SOC normally run empty.
-    # total_loaded is what was loaded at that leg's origin; blank counts as 0.
-    #   SOC -> LM is empty when nothing was loaded at the SOC.
-    #   FM -> SOC is empty when the truck arrives carrying nothing: 0 loaded at every hub since
-    #   it last left a SOC. Parcels loaded AT a SOC are deliveries dropped at LM hubs, so they
-    #   don't count - and a multi-stop pickup whose last FM hub had nothing isn't empty.
-    kinds = {s: station_kind(s) for s in pd.unique(pd.concat([df['origin_station'], df['dest_station']]))}
-    o_kind, d_kind = df['origin_station'].map(kinds), df['dest_station'].map(kinds)
+    # An LT can sit in both the SOC-LM and FM-SOC trackers, so legs are deduped first.
+    # "Not Depart" legs never ran (no ATD/ATA) and are ignored throughout.
+    legs = df.drop_duplicates(['trip_number', 'origin_station', 'dest_station', 'trip_std']).copy()
+    legs['std_dt'] = pd.to_datetime(legs['trip_std'], errors='coerce')
+    legs['ata'] = pd.to_datetime(legs['trip_ata'], errors='coerce')
+    legs['dest_ata_dt'] = pd.to_datetime(legs['dest_ata'], errors='coerce')
+    legs['departed'] = legs['trip_status'].astype(str).str.strip().str.lower() != 'not depart'
+    legs = legs.sort_values(['trip_number', 'std_dt', 'atd_dt'])
+
+    # Finished (for working hours / the DR Empty LT card): the last scheduled leg ran and every
+    # departed leg has arrived - an LT still on the road would look too short.
+    last_ran = legs.groupby('trip_number')['departed'].last()
+    d = legs[legs['departed']].copy()
+    g = d.groupby('trip_number')
+    hrs = (g['dest_ata_dt'].max() - g['ata'].min()).dt.total_seconds() / 3600
+    finished = last_ran.reindex(hrs.index, fill_value=False) & (g['dest_ata_dt'].count() == g.size()) & (hrs >= 0)
+
+    # Empty only looks at legs that should carry parcels; SOC -> FM and LM -> SOC normally run
+    # empty. total_loaded / total_unloaded belong to the leg's ORIGIN station; blank counts as 0.
+    # A "run" is the stretch of legs from leaving a SOC until the next SOC.
+    #   FM -> SOC is empty when the truck arrives carrying nothing: 0 loaded at every hub since it
+    #   last left a SOC (parcels loaded AT a SOC are deliveries dropped at LM hubs).
+    #   SOC -> LM is empty when 0 was loaded at the SOC and 0 was unloaded at every hub on the run.
+    #   Unloaded alone isn't enough: hubs often leave it blank even on full delivery runs. Not
+    #   judged until the run's last leg has arrived, since unloaded is filled in after arrival.
+    kinds = {s: station_kind(s) for s in pd.unique(pd.concat([d['origin_station'], d['dest_station']]))}
+    o_kind, d_kind = d['origin_station'].map(kinds), d['dest_station'].map(kinds)
+    loaded, unloaded = to_num(d['total_loaded']), to_num(d['total_unloaded'])
+    from_soc = o_kind == 'SOC'
+    run = [d['trip_number'], from_soc.groupby(d['trip_number']).cumsum()]
+    on_board = loaded.where(~from_soc, 0).groupby(run).cumsum()
+    run_unloaded = unloaded.where(~from_soc, 0).groupby(run).transform('sum')
+    run_done = d['dest_ata_dt'].notna().groupby(run).transform('last')
     inbound = (o_kind == 'FM') & (d_kind == 'SOC')
-    outbound = (o_kind == 'SOC') & (d_kind == 'LM')
-    loaded = pd.to_numeric(df['total_loaded'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-    s = df[['trip_number', 'atd_dt']].sort_values(['trip_number', 'atd_dt'])
-    from_soc = (o_kind.loc[s.index] == 'SOC').values
-    seg = pd.Series(from_soc, index=s.index).groupby(s['trip_number'].values).cumsum()
-    hub_loaded = loaded.loc[s.index].where(~from_soc, 0)
-    on_board = hub_loaded.groupby([s['trip_number'].values, seg.values]).cumsum().reindex(df.index)
-    legs = pd.DataFrame({
-        'trip_number': df['trip_number'],
-        'ata': pd.to_datetime(df['trip_ata'], errors='coerce'),
-        'dest_ata': pd.to_datetime(df['dest_ata'], errors='coerce'),
-        'relevant': inbound | outbound,
-        'empty_leg': (inbound & (on_board == 0)) | (outbound & (loaded == 0)),
-    })
-    lt = legs.groupby('trip_number').agg(
-        n_legs=('trip_number', 'size'), n_arrived=('dest_ata', 'count'),
-        n_relevant=('relevant', 'sum'), n_empty=('empty_leg', 'sum'),
-        first_ata=('ata', 'min'), last_dest_ata=('dest_ata', 'max'),
-    )
-    hrs = (lt['last_dest_ata'] - lt['first_ata']).dt.total_seconds() / 3600
-    finished = (lt['n_arrived'] == lt['n_legs']) & (hrs >= 0)
+    outbound = (o_kind == 'SOC') & (d_kind == 'LM') & run_done
+    empty_leg = (inbound & (on_board == 0)) | (outbound & (loaded == 0) & (run_unloaded == 0))
+
+    judged = inbound | outbound
+    n_judged = judged.groupby(d['trip_number']).sum()
+    n_empty = empty_leg.groupby(d['trip_number']).sum()
     stats = pd.DataFrame({
         'Finished': finished,
-        'Empty': finished & (lt['n_relevant'] > 0) & (lt['n_empty'] == lt['n_relevant']),
+        'Empty': finished & (n_judged > 0) & (n_empty == n_judged),
         'Work_Hrs': hrs.where(finished),
     })
-    rel = df.loc[inbound | outbound, ['trip_number', 'origin_station', 'dest_station']].copy()
-    rel['Direction'] = inbound[inbound | outbound].map({True: 'FM → SOC', False: 'SOC → LM'})
+    rel = d.loc[judged, ['trip_number', 'origin_station', 'dest_station']].copy()
+    rel['Direction'] = inbound[judged].map({True: 'FM → SOC', False: 'SOC → LM'})
     rel['SOC'] = rel['dest_station'].where(rel['Direction'] == 'FM → SOC', rel['origin_station'])
     rel['Hub'] = rel['origin_station'].where(rel['Direction'] == 'FM → SOC', rel['dest_station'])
-    rel['Empty'] = legs.loc[rel.index, 'empty_leg']
+    rel['Empty'] = empty_leg[judged]
     return stats, rel[['trip_number', 'Direction', 'SOC', 'Hub', 'Empty']]
 
 
@@ -386,13 +400,12 @@ def normalize_cost_type(ct):
 
 
 def build_empty_lt(all_lts, rel_legs):
-    # Leg-level view of finished LTs of every cost type: each FM -> SOC and SOC -> LM leg,
-    # credited to its SOC, dated by its LT's first-leg date so it follows the Date Window.
-    # Only SOC/direction pairs with at least one empty leg are shipped - the others never
-    # appear in the section.
-    fin = all_lts[all_lts['Finished'].fillna(False).astype(bool)][
-        ['trip_number', 'Date', 'agency_name', 'vehicle_type_name', 'cost_type', 'trip_route', 'Work_Hrs']]
-    legs = rel_legs.merge(fin, on='trip_number')
+    # Leg-level view of every cost type: each departed FM -> SOC and SOC -> LM leg (see
+    # build_lt_stats), credited to its SOC, dated by its LT's first-leg date so it follows the
+    # Date Window. Only SOC/direction pairs with at least one empty leg are shipped - the
+    # others never appear in the section.
+    lts = all_lts[['trip_number', 'Date', 'agency_name', 'vehicle_type_name', 'cost_type', 'trip_route', 'Work_Hrs']]
+    legs = rel_legs.merge(lts, on='trip_number')
     legs['cost_type'] = legs['cost_type'].map(normalize_cost_type)
     legs['agency_name'] = legs['agency_name'].replace('', 'Unknown')
     hot = set(map(tuple, legs.loc[legs['Empty'], ['SOC', 'Direction']].drop_duplicates().values))

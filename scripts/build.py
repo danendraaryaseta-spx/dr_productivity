@@ -100,31 +100,53 @@ def read_tracker(gc, sheet_id, source_label):
     return rows
 
 
+def station_kind(name):
+    s = str(name).strip()
+    if s.endswith(' DC') or s.endswith(' RDC'):
+        return 'SOC'
+    if 'first mile' in s.lower():
+        return 'FM'
+    if s.lower().endswith('hub'):
+        return 'LM'
+    return 'Other'
+
+
 def build_lt_stats(df):
-    # Judged over every leg of the LT, departed or not. Only finished LTs (every leg has a
-    # dest_ata) count, since an in-progress LT would look empty or too short. Loaded is
-    # usually filled on just one leg, so blank counts as 0 and "empty" means 0 on all legs.
+    # Only finished LTs (every leg, departed or not, has a dest_ata) are judged, since an
+    # in-progress LT would look empty or too short.
+    # "Empty" only looks at legs that should carry parcels: FM hub -> SOC (pickup coming in)
+    # and SOC -> LM hub (delivery going out). SOC -> FM and LM -> SOC normally run empty.
+    # total_loaded is what was loaded at that leg's origin; blank counts as 0.
+    kinds = {s: station_kind(s) for s in pd.unique(pd.concat([df['origin_station'], df['dest_station']]))}
+    o_kind, d_kind = df['origin_station'].map(kinds), df['dest_station'].map(kinds)
+    inbound = (o_kind == 'FM') & (d_kind == 'SOC')
+    outbound = (o_kind == 'SOC') & (d_kind == 'LM')
+    loaded = pd.to_numeric(df['total_loaded'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
     legs = pd.DataFrame({
         'trip_number': df['trip_number'],
         'ata': pd.to_datetime(df['trip_ata'], errors='coerce'),
         'dest_ata': pd.to_datetime(df['dest_ata'], errors='coerce'),
-        'loaded': pd.to_numeric(df['total_loaded'].astype(str).str.replace(',', ''), errors='coerce').fillna(0),
+        'relevant': inbound | outbound,
+        'empty_leg': (inbound | outbound) & (loaded == 0),
     })
     lt = legs.groupby('trip_number').agg(
-        n_legs=('trip_number', 'size'), n_arrived=('dest_ata', 'count'), loaded=('loaded', 'sum'),
+        n_legs=('trip_number', 'size'), n_arrived=('dest_ata', 'count'),
+        n_relevant=('relevant', 'sum'), n_empty=('empty_leg', 'sum'),
         first_ata=('ata', 'min'), last_dest_ata=('dest_ata', 'max'),
     )
     hrs = (lt['last_dest_ata'] - lt['first_ata']).dt.total_seconds() / 3600
     finished = (lt['n_arrived'] == lt['n_legs']) & (hrs >= 0)
-    # Stations visited, in departure order - only needed for DR LTs (empty-LT section).
-    byday_legs = df[df['cost_type'] == 'By Day'].sort_values('atd_dt')
-    stops = byday_legs.groupby('trip_number', sort=False)['dest_station'].agg(lambda s: list(dict.fromkeys(s)))
-    return pd.DataFrame({
+    stats = pd.DataFrame({
         'Finished': finished,
-        'Empty': finished & (lt['loaded'] == 0),
+        'Empty': finished & (lt['n_relevant'] > 0) & (lt['n_empty'] == lt['n_relevant']),
         'Work_Hrs': hrs.where(finished),
-        'Stops': stops,
     })
+    rel = df.loc[inbound | outbound, ['trip_number', 'origin_station', 'dest_station']].copy()
+    rel['Direction'] = inbound[inbound | outbound].map({True: 'FM → SOC', False: 'SOC → LM'})
+    rel['SOC'] = rel['dest_station'].where(rel['Direction'] == 'FM → SOC', rel['origin_station'])
+    rel['Hub'] = rel['origin_station'].where(rel['Direction'] == 'FM → SOC', rel['dest_station'])
+    rel['Empty'] = legs.loc[rel.index, 'empty_leg']
+    return stats, rel[['trip_number', 'Direction', 'SOC', 'Hub', 'Empty']]
 
 
 def build_trips_first_leg(gc):
@@ -147,7 +169,8 @@ def build_trips_first_leg(gc):
 
     first_leg['Date'] = first_leg['atd_dt'].dt.strftime('%Y-%m-%d')
     first_leg = first_leg[first_leg['origin_station'].astype(str).str.endswith(' DC')]
-    first_leg = first_leg.join(build_lt_stats(df), on='trip_number')
+    lt_stats, rel_legs = build_lt_stats(df)
+    first_leg = first_leg.join(lt_stats, on='trip_number')
 
     # No fixed rolling window - the full date range actually present in the
     # trackers is exposed to the client, which lets the user pick any sub-range
@@ -158,10 +181,10 @@ def build_trips_first_leg(gc):
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
         'vehicle_type_name': 'Vehicle Type', 'cost_type': 'Cost Type',
         'trip_number': 'LT', 'trip_route': 'Route',
-    })[['LT', 'Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Route', 'Finished', 'Empty', 'Work_Hrs', 'Stops']]
+    })[['LT', 'Vendor', 'Origin DC', 'Vehicle Type', 'Cost Type', 'Date', 'Route', 'Finished', 'Empty', 'Work_Hrs']]
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
-    return trips, all_dates, socsoc_ok
+    return trips, all_dates, socsoc_ok, rel_legs
 
 
 def build_onsite(gc, window_dates):
@@ -344,37 +367,29 @@ def build_productivity(trips, onsite, window_dates):
     }
 
 
-def build_empty_lt(trips):
-    # Each finished DR LT credits its origin DC (role "Origin") and every other station it
-    # stopped at (role "Destination" - the final stop is usually the origin again, so the
-    # stops in between are what's informative). Only station/role pairs with at least one
-    # empty LT are shipped, since stations with none never appear in the section.
+def build_empty_lt(trips, rel_legs):
+    # Leg-level view of finished DR LTs: every FM -> SOC and SOC -> LM leg, credited to its
+    # SOC, dated by its LT's first-leg date so it follows the Date Window. Only SOC/direction
+    # pairs with at least one empty leg are shipped - the others never appear in the section.
     fin = trips[(trips['Cost Type'] == 'By Day') & trips['Finished'].fillna(False).astype(bool)]
-    recs = []
-    for r in fin.to_dict('records'):
-        origin, empty = r['Origin DC'], bool(r['Empty'])
-        recs.append((r['Date'], r['Vendor'], origin, origin, 'Origin', empty))
-        for st in r['Stops'] if isinstance(r['Stops'], list) else []:
-            if st != origin:
-                recs.append((r['Date'], r['Vendor'], origin, st, 'Destination', empty))
-    df = pd.DataFrame(recs, columns=['Date', 'Vendor', 'Origin DC', 'Station', 'Role', 'Empty'])
-    hot = set(map(tuple, df.loc[df['Empty'], ['Station', 'Role']].drop_duplicates().values))
-    df = df[[(s, ro) in hot for s, ro in zip(df['Station'], df['Role'])]]
-    g = df.groupby(['Date', 'Vendor', 'Origin DC', 'Station', 'Role']).agg(
-        Finished=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
+    legs = rel_legs.merge(fin[['LT', 'Date', 'Vendor', 'Vehicle Type', 'Route', 'Work_Hrs']],
+                          left_on='trip_number', right_on='LT')
+    hot = set(map(tuple, legs.loc[legs['Empty'], ['SOC', 'Direction']].drop_duplicates().values))
+    shown = legs[[(s, d) in hot for s, d in zip(legs['SOC'], legs['Direction'])]]
+    g = shown.groupby(['Date', 'Vendor', 'SOC', 'Direction']).agg(
+        Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
 
-    empty_lts = fin[fin['Empty'].astype(bool)].sort_values(['Date', 'Origin DC'], ascending=[False, True])
-    lts = [{
+    empty_legs = legs[legs['Empty']].sort_values(['Date', 'SOC'], ascending=[False, True])
+    items = [{
         'LT': r['LT'], 'Date': r['Date'], 'Vendor': r['Vendor'], 'Vehicle Type': r['Vehicle Type'],
-        'Origin DC': r['Origin DC'], 'Route': r['Route'],
-        'Stops': [s for s in (r['Stops'] if isinstance(r['Stops'], list) else []) if s != r['Origin DC']],
+        'Direction': r['Direction'], 'SOC': r['SOC'], 'Hub': r['Hub'], 'Route': r['Route'],
         'Work_Hrs': None if pd.isna(r['Work_Hrs']) else round(float(r['Work_Hrs']), 1),
-    } for r in empty_lts.to_dict('records')]
-    print(f'  Empty LT section: {len(lts)} empty LTs, {len(hot)} station/role pairs, {len(g)} rows')
+    } for r in empty_legs.to_dict('records')]
+    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs, {len(items)} empty, {len(hot)} SOC/direction pairs')
     return {
-        'cols': ['Date', 'Vendor', 'Origin DC', 'Station', 'Role', 'Finished', 'Empty'],
-        'rows': [[d, v, o, s, ro, int(f), int(e)] for d, v, o, s, ro, f, e in g.itertuples(index=False)],
-        'lts': lts,
+        'cols': ['Date', 'Vendor', 'SOC', 'Direction', 'Legs', 'Empty'],
+        'rows': [[d, v, s, di, int(n), int(e)] for d, v, s, di, n, e in g.itertuples(index=False)],
+        'legs': items,
     }
 
 
@@ -430,7 +445,7 @@ def main():
     gc = get_client()
 
     print('Fetching trip trackers (SOC-LM/FM-SOC/SOC-SOC)...')
-    trips, window_dates, socsoc_ok = build_trips_first_leg(gc)
+    trips, window_dates, socsoc_ok, rel_legs = build_trips_first_leg(gc)
     print(f'  Date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Fetching onsite registrations...')
@@ -447,7 +462,7 @@ def main():
 
     raw = dict(dashboard)
     raw['productivity'] = productivity
-    raw['empty_lt'] = build_empty_lt(trips)
+    raw['empty_lt'] = build_empty_lt(trips, rel_legs)
     raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
     raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
     raw['dc_regions'] = dc_regions

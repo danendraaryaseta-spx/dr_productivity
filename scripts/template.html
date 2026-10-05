@@ -113,6 +113,16 @@ details.how div { margin-top: 6px; max-width: 760px; }
 
 .chart { position: relative; height: 260px; }
 .chart.short { height: 190px; }
+.chart.tall { height: 320px; }
+.legend.lines button {
+  font: inherit; font-size: 12px; color: var(--ink-2); background: none; border: 0; padding: 2px 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.legend.lines button i { width: 16px; height: 0; border-radius: 0; margin: 0; border-top: 2px solid; display: inline-block; }
+.legend.lines button.strong { color: var(--ink); font-weight: 600; }
+.legend.lines button.strong i { border-top-width: 3px; }
+.legend.lines button[aria-pressed="false"] { opacity: .38; text-decoration: line-through; }
+.legend.lines .hint { color: var(--muted); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 
@@ -261,7 +271,7 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
 
     <div class="card">
       <div class="card-head">
-        <h3>Productivity by <span id="grainWord">day</span></h3>
+        <h3>Productivity by <span id="grainWord">day</span> <span class="sub" id="prodSub"></span></h3>
         <div class="controls">
           <div class="seg" id="grainSeg">
             <button type="button" data-grain="day" aria-pressed="true">Daily</button>
@@ -269,7 +279,9 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
           </div>
         </div>
       </div>
-      <div class="chart"><canvas id="prodChart" aria-label="Productivity over time"></canvas></div>
+      <div class="legend lines" id="prodLegend" style="margin-bottom:10px"></div>
+      <div class="chart tall"><canvas id="prodChart" aria-label="Productivity over time"></canvas></div>
+      <details class="how" style="margin-top:10px"><summary>Show numbers</summary><div class="tscroll" id="prodTable"></div></details>
     </div>
 
     <div class="card">
@@ -557,21 +569,44 @@ const oneLine = {
     const py = y.getPixelForValue(1), ctx = c.ctx;
     ctx.save(); ctx.strokeStyle = css('--axis'); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x.left, py); ctx.lineTo(x.right, py); ctx.stroke();
-    ctx.fillStyle = css('--muted'); ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'right';
-    ctx.fillText('1.0 = one trip per truck', x.right, py - 5); ctx.restore();
+    ctx.fillStyle = css('--muted'); ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('1.0 = one trip per truck', x.left + 6, py - 5); ctx.restore();
   },
 };
+// Direct-labels the last value of the lines that matter (Nationwide, and the selected region).
 const endLabel = {
   id: 'endLabel',
   afterDatasetsDraw(c) {
-    const meta = c.getDatasetMeta(0), data = c.data.datasets[0].data;
-    let i = data.length - 1; while (i >= 0 && data[i] == null) i--;
-    if (i < 0) return;
-    const pt = meta.data[i], ctx = c.ctx;
-    ctx.save(); ctx.fillStyle = css('--ink'); ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'right';
-    ctx.fillText(data[i].toFixed(2), pt.x - 8, pt.y - 10); ctx.restore();
+    const labelled = c.data.datasets.map((ds, di) => ({ ds, di })).filter(({ ds, di }) => ds.endLabel && c.isDatasetVisible(di));
+    const placed = [];
+    labelled.forEach(({ ds, di }) => {
+      let i = ds.data.length - 1; while (i >= 0 && ds.data[i] == null) i--;
+      if (i < 0) return;
+      const pt = c.getDatasetMeta(di).data[i], ctx = c.ctx;
+      let y = pt.y - 10;
+      if (placed.some(p => Math.abs(p - y) < 14)) y = pt.y + 18;
+      placed.push(y);
+      ctx.save(); ctx.fillStyle = css('--ink'); ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText(`${ds.endLabel} ${ds.data[i].toFixed(2)}`, pt.x - 8, y); ctx.restore();
+    });
   },
 };
+
+// Region colours follow the region, never the current filter: slots go to the 8 regions with the
+// most DR trips overall; any smaller one beyond that is drawn grey.
+const REGION_ORDER = (() => {
+  const t = {};
+  P.detail.forEach(r => { const rg = regionOf(r['Origin DC']); if (rg !== 'Unknown') t[rg] = (t[rg] || 0) + r.LT_Trips; });
+  return Object.keys(t).sort((a, b) => t[b] - t[a]);
+})();
+const rColor = r => { const i = REGION_ORDER.indexOf(r); return i >= 0 && i < 8 ? css(`--s${i + 1}`) : css('--other'); };
+const bucketOf = d => S.grain === 'week' ? weekStart(d) : d;
+function prodLine(rs, keys) {
+  const m = {};
+  rs.forEach(r => { const b = m[bucketOf(r.Date)] = m[bucketOf(r.Date)] || { on: 0, lt: 0 }; b.on += r.Onsited; b.lt += r.LT_Trips; });
+  return keys.map(k => m[k] ? ratio(m[k].lt, m[k].on) : null);
+}
+let prodHover = null;
 
 function baseOptions() {
   const muted = css('--muted'), grid = css('--grid'), axis = css('--axis');
@@ -592,29 +627,87 @@ function baseOptions() {
   };
 }
 
+// No region picked: Nationwide vs every region. A region picked: Nationwide, that region,
+// and each of its DCs as thin grey context lines (hover one to bring it forward).
+function renderProdChart(rs, ser) {
+  const keys = ser.map(s => s.key), labels = ser.map(s => s.label);
+  const ink = css('--ink'), s1 = css('--s1'), s2 = css('--s2'), other = css('--other'), grid = css('--grid'), surface = css('--surface');
+  const ds = new Set(dates());
+  const nationRows = P.detail.filter(r => ds.has(r.Date) && (!S.vehicle || r['Vehicle Type'] === S.vehicle));
+  const lines = [{ label: 'Nationwide', role: 'nation', color: ink, width: 2.5, data: prodLine(nationRows, keys), endLabel: 'Nationwide' }];
+  if (!S.region) {
+    REGION_ORDER.forEach(rg => lines.push({ label: rg, role: 'region', color: rColor(rg), width: 1.75,
+      data: prodLine(nationRows.filter(r => regionOf(r['Origin DC']) === rg), keys) }));
+    $('prodSub').textContent = '· nationwide vs each region';
+  } else {
+    const own = REGION_ORDER.indexOf(S.region) > -1 && REGION_ORDER.indexOf(S.region) < 8 ? rColor(S.region) : s1;
+    lines.push({ label: S.region, role: 'focus', color: own, width: 2.75, data: prodLine(rs, keys), endLabel: S.region });
+    [...new Set(rs.map(r => r['Origin DC']))].sort().forEach(dc => lines.push({ label: dc, role: 'dc', color: other, width: 1.25,
+      data: prodLine(rs.filter(r => r['Origin DC'] === dc), keys) }));
+    $('prodSub').textContent = `· ${S.region}: its DCs vs the region vs nationwide`;
+  }
+  prodHover = null;
+  const minor = l => l.role === 'region' || l.role === 'dc';
+  const pickHi = lines[1] && lines[1].role === 'focus' && lines[1].color === s2 ? s1 : s2;
+  const colorOf = (l, i) => prodHover == null || !minor(lines[prodHover] || {}) || !minor(l) || prodHover === i
+    ? (l.role === 'dc' && prodHover === i ? pickHi : l.color) : grid;
+  const widthOf = (l, i) => prodHover === i && minor(l) ? 2.75 : l.width;
+  const partial = new Set(ser.filter(s => s.partial).map(s => s.key));
+  const vals = lines.flatMap(l => l.data).filter(v => v != null);
+  // Small regions/DCs swing wildly on low truck counts; cap the axis so the main lines stay readable.
+  const yMax = Math.min(3, Math.max(2, Math.ceil(Math.max(0, ...vals) * 2) / 2));
+
+  const po = baseOptions();
+  po.scales.y.max = yMax;
+  po.onHover = (e, _, chart) => {
+    const hit = chart.getElementsAtEventForMode(e, 'nearest', { intersect: false, axis: 'xy' }, false)[0];
+    const idx = hit ? hit.datasetIndex : null;
+    if (idx !== prodHover) { prodHover = idx; chart.update('none'); }
+  };
+  po.plugins.tooltip.filter = it => !S.region || ['nation', 'focus'].includes(lines[it.datasetIndex].role) || it.datasetIndex === prodHover;
+  po.plugins.tooltip.itemSort = (a, b) => (lines[a.datasetIndex].role === 'nation' ? -1 : 0) - (lines[b.datasetIndex].role === 'nation' ? -1 : 0) || (b.raw ?? -1) - (a.raw ?? -1);
+  po.plugins.tooltip.callbacks = {
+    title: items => items.length ? ser[items[0].dataIndex].label + (ser[items[0].dataIndex].partial ? ' (in progress)' : '') : '',
+    label: it => ` ${it.dataset.label}: ${f2(it.raw)}`,
+    labelColor: it => ({ borderColor: lines[it.datasetIndex].color, backgroundColor: lines[it.datasetIndex].color }),
+  };
+  if (prodChart) prodChart.destroy();
+  prodChart = new Chart($('prodChart'), {
+    type: 'line',
+    data: { labels, datasets: lines.map((l, i) => ({
+      label: l.label, data: l.data, endLabel: l.endLabel, tension: .15, spanGaps: true,
+      order: l.role === 'nation' ? 0 : l.role === 'focus' ? 1 : 2,
+      borderColor: () => colorOf(l, i), backgroundColor: () => colorOf(l, i), borderWidth: () => widthOf(l, i),
+      pointRadius: l.role === 'nation' ? l.data.map((v, j) => partial.has(keys[j]) && v != null ? 4 : 0) : 0,
+      pointBackgroundColor: surface, pointBorderColor: l.color, pointBorderWidth: 2, pointHoverRadius: minor(l) ? 3 : 5,
+      segment: { borderDash: c => partial.has(keys[c.p1DataIndex]) ? [4, 4] : undefined },
+    })) },
+    options: po, plugins: [oneLine, endLabel],
+  });
+  $('prodChart').onmouseleave = () => { if (prodHover != null) { prodHover = null; prodChart.update('none'); } };
+
+  const legendItem = (l, i) => `<button type="button" data-i="${i}" aria-pressed="true" class="${minor(l) ? '' : 'strong'}"><i style="border-color:${l.color}"></i>${esc(l.label)}</button>`;
+  $('prodLegend').innerHTML = S.region
+    ? lines.filter(l => !minor(l)).map(l => legendItem(l, lines.indexOf(l))).join('') +
+      `<span class="hint"><i style="display:inline-block;width:16px;border-top:1.5px solid ${other};vertical-align:middle;margin-right:6px"></i>${lines.length - 2} DCs in ${esc(S.region)} · hover a grey line to see which</span>`
+    : lines.map(legendItem).join('');
+  if (Math.max(0, ...vals) > yMax) $('prodLegend').insertAdjacentHTML('beforeend', `<span class="hint">Axis stops at ${yMax}; hover for higher values</span>`);
+  $('prodLegend').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    const i = +b.dataset.i, on = !prodChart.isDatasetVisible(i);
+    prodChart.setDatasetVisibility(i, on); prodChart.update('none'); b.setAttribute('aria-pressed', String(on));
+  }));
+
+  $('prodTable').innerHTML = `<table><thead><tr><th style="padding:8px">${S.grain === 'week' ? 'Week' : 'Date'}</th>${lines.map(l => `<th class="n" style="padding:8px">${esc(l.label)}</th>`).join('')}</tr></thead><tbody>` +
+    ser.map((s, j) => `<tr><td>${s.label}${s.partial ? ' <span class="muted small">in progress</span>' : ''}</td>${lines.map(l => `<td class="n"${minor(l) ? '' : ' style="font-weight:700"'}>${f2(l.data[j])}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+}
+
 function renderTrend(rs) {
   const ser = trendSeries(rs);
   $('grainWord').textContent = S.grain === 'week' ? 'week' : 'day';
   const labels = ser.map(s => s.label);
   const s1 = css('--s1'), s2 = css('--s2'), surface = css('--surface');
 
-  const po = baseOptions();
-  po.scales.y.suggestedMax = 1.6;
-  po.plugins.tooltip.callbacks = {
-    title: items => ser[items[0].dataIndex].label + (ser[items[0].dataIndex].partial ? ' (in progress)' : ''),
-    label: it => { const s = ser[it.dataIndex]; return [` Productivity ${f2(s.prod)}`, ` ${fmt(s.lt)} trips ÷ ${fmt(s.on)} truck-days`]; },
-  };
-  if (prodChart) prodChart.destroy();
-  prodChart = new Chart($('prodChart'), {
-    type: 'line',
-    data: { labels, datasets: [{
-      data: ser.map(s => s.prod), borderColor: s1, backgroundColor: s1, borderWidth: 2, tension: .25, spanGaps: true,
-      pointRadius: ser.map((s, i) => i === ser.length - 1 || s.partial ? 4 : 0),
-      pointBackgroundColor: ser.map(s => s.partial ? surface : s1), pointBorderColor: s1, pointBorderWidth: 2, pointHoverRadius: 5,
-      segment: { borderDash: c => ser[c.p1DataIndex]?.partial ? [4, 4] : undefined },
-    }] },
-    options: po, plugins: [oneLine, endLabel],
-  });
+  renderProdChart(rs, ser);
 
   const vo = baseOptions();
   vo.plugins.tooltip.callbacks = {

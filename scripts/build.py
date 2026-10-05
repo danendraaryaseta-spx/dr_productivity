@@ -10,7 +10,6 @@ just a static file - no live Sheets reads at request time.
 Mirrors the logic already proven out in:
   - Daily Rent Performance/scripts/tracker_raw/build_firstleg.py (first-leg detection)
   - Daily Rent Performance/scripts/productivity_onsite.py (onsite + productivity)
-  - Daily Rent Performance/scripts/ordered_vs_onsite.py (order sheet comparison)
   - Daily Rent Performance/appscript-dashboard/Code.gs (the live version's port of all of the above)
 """
 import os
@@ -26,10 +25,8 @@ SHEET_IDS = {
     'SOC_LM': '1nLurOQ1JJRRVcyA_-egi32J6nGj9darabA-al3OwG7E',
     'FM_SOC': '1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0',
     'ONSITE': '1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y',
-    'ORDER': '1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E',
     'SOC_SOC': '11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU',
 }
-ORDER_HEADER_ROW = 12  # header sits at row 12 on that specific tab as of 7.7 campaign
 
 TRACKER_COLS = ['trip_date_v2', 'trip_route', 'slot_number', 'trip_number', 'cost_type',
                 'origin_station', 'dest_station', 'vehicle_type_name', 'total_loaded',
@@ -201,6 +198,12 @@ def build_trips_first_leg(gc):
     # trackers is exposed to the client, which lets the user pick any sub-range
     # via the date-window control while still showing daily granularity.
     all_dates = sorted(first_leg['Date'].dropna().unique().tolist())
+    # The trackers keep a rolling ~17 days, so the oldest day is cut off part-way: trucks are
+    # onsite but most of its LTs are already gone, which reads as near-zero productivity.
+    per_day = first_leg.groupby('Date').size()
+    while len(all_dates) > 1 and per_day.get(all_dates[0], 0) < 0.5 * per_day.median():
+        print(f'  Dropping {all_dates[0]}: only {per_day.get(all_dates[0], 0)} LTs (tracker window cut it off)')
+        all_dates = all_dates[1:]
 
     trips = first_leg.rename(columns={
         'agency_name': 'Vendor', 'origin_station': 'Origin DC',
@@ -249,51 +252,18 @@ def build_onsite(gc, window_dates):
     return pd.DataFrame(rows)
 
 
-def build_dc_regions(trips, onsite, order):
-    # Region only exists on the onsite sheet, not the trip trackers or the order
-    # sheet - build a DC -> Region map from onsite data and reuse it everywhere
-    # Origin DC shows up: trips, onsite, AND the order sheet (Ordered-vs-Onsited
-    # table). A DC seen only in trips/order (never onsite) has no known region
-    # and is bucketed 'Unknown' rather than dropped or silently missing.
+def build_dc_regions(trips, onsite, empty_socs):
+    # Region only exists on the onsite sheet, not the trip trackers - build a
+    # DC -> Region map from onsite data and reuse it everywhere a DC shows up
+    # (trips, onsite, and the SOCs in the empty-leg section). A DC never seen
+    # onsite has no known region and is bucketed 'Unknown' rather than dropped.
     region_map = {}
     if len(onsite):
         region_map = onsite.groupby('Origin DC')['Region'].agg(lambda s: s.mode().iat[0]).to_dict()
-    all_dcs = set(trips['Origin DC'].dropna().unique())
+    all_dcs = set(trips['Origin DC'].dropna().unique()) | set(empty_socs)
     if len(onsite):
         all_dcs |= set(onsite['Origin DC'].dropna().unique())
-    if order is not None and len(order):
-        all_dcs |= set(order['Origin DC'].dropna().unique())
     return {dc: region_map.get(dc, 'Unknown') for dc in all_dcs}
-
-
-def bucket_vehicle_type(vt):
-    return 'WB' if vt == 'TRONTON (10WH)' else 'CDD L'
-
-
-def build_order(gc):
-    try:
-        sh = gc.open_by_key(SHEET_IDS['ORDER'])
-        ws = sh.worksheet('DR Campaign (LH) 7.7')
-        values = ws.get(f'A{ORDER_HEADER_ROW}:AH')
-        header = values[0]
-        idx = {h: i for i, h in enumerate(header) if h}
-        rows = []
-        for r in values[1:]:
-            dc = r[idx['Hub/DC Name']] if idx['Hub/DC Name'] < len(r) else ''
-            if not dc:
-                continue
-            rows.append({
-                'Origin DC': dc,
-                'Order Type': r[idx['Type Unit']] if idx['Type Unit'] < len(r) else '',
-                'Qty': pd.to_numeric(r[idx['Qty']] if idx['Qty'] < len(r) else 0, errors='coerce') or 0,
-                'Start': to_date_str(r[idx['Contract Period Start Date']]) if idx['Contract Period Start Date'] < len(r) else None,
-                'End': to_date_str(r[idx['Contract Period End Date']]) if idx['Contract Period End Date'] < len(r) else None,
-            })
-        print(f'  Order sheet: {len(rows)} booking rows')
-        return pd.DataFrame(rows)
-    except Exception as e:
-        print(f'  Order sheet unavailable: {e}')
-        return None
 
 
 def build_dashboard_data(trips, window_dates):
@@ -399,83 +369,36 @@ def normalize_cost_type(ct):
     return 'In-House' if s.lower() == 'in-house' else s
 
 
-def build_empty_lt(all_lts, rel_legs):
+def build_empty_lt(all_lts, rel_legs, dc_regions):
     # Leg-level view of every cost type: each departed FM -> SOC and SOC -> LM leg (see
-    # build_lt_stats), credited to its SOC, dated by its LT's first-leg date so it follows the
-    # Date Window. Only SOC/direction pairs with at least one empty leg are shipped - the
-    # others never appear in the section.
-    lts = all_lts[['trip_number', 'Date', 'agency_name', 'vehicle_type_name', 'cost_type', 'trip_route', 'Work_Hrs']]
+    # build_lt_stats), dated by its LT's first-leg date so it follows the Date Window.
+    # Two roll-ups, each shipped only where there's at least one empty leg (the rest never
+    # appear in the section): per SOC + direction, and per route (the LT's trip_route).
+    lts = all_lts[['trip_number', 'Date', 'cost_type', 'trip_route']]
     legs = rel_legs.merge(lts, on='trip_number')
     legs['cost_type'] = legs['cost_type'].map(normalize_cost_type)
-    legs['agency_name'] = legs['agency_name'].replace('', 'Unknown')
-    hot = set(map(tuple, legs.loc[legs['Empty'], ['SOC', 'Direction']].drop_duplicates().values))
-    shown = legs[[(s, d) in hot for s, d in zip(legs['SOC'], legs['Direction'])]]
-    g = shown.groupby(['Date', 'cost_type', 'agency_name', 'SOC', 'Direction']).agg(
-        Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
 
-    # Repeated names (routes, stations, vendors...) are sent once in `strings` and referenced
-    # by index - otherwise the few thousand empty legs alone add ~800 KB to the page.
+    def rollup(key):
+        hot = set(map(tuple, legs.loc[legs['Empty'], [key, 'Direction']].drop_duplicates().values))
+        shown = legs[[(k, d) in hot for k, d in zip(legs[key], legs['Direction'])]]
+        return shown.groupby(['Date', 'cost_type', key, 'Direction']).agg(
+            Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index()
+
+    # Repeated names are sent once in `strings` and referenced by index to keep the page small.
     pool = {}
     ix = lambda s: pool.setdefault(s, len(pool))
-    empty_legs = legs[legs['Empty']].sort_values(['Date', 'SOC'], ascending=[False, True])
-    items = [[r['Date'], r['trip_number'], ix(r['cost_type']), ix(r['agency_name']), ix(r['vehicle_type_name']),
-              ix(r['Direction']), ix(r['SOC']), ix(r['Hub']), ix(r['trip_route']),
-              None if pd.isna(r['Work_Hrs']) else round(float(r['Work_Hrs']), 1)]
-             for r in empty_legs.to_dict('records')]
-    rows = [[d, ix(c), ix(v), ix(s), ix(di), int(n), int(e)] for d, c, v, s, di, n, e in g.itertuples(index=False)]
-    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs (all cost types), {len(items)} empty, '
-          f'{len(hot)} SOC/direction pairs, {len(rows)} rows')
+    pack = lambda g: [[d, ix(c), ix(k), ix(di), int(n), int(e)] for d, c, k, di, n, e in g.itertuples(index=False)]
+    socs, routes = pack(rollup('SOC')), pack(rollup('trip_route'))
+    legs['Region'] = legs['SOC'].map(dc_regions).fillna('Unknown')
+    totals = pack(legs.groupby(['Date', 'cost_type', 'Region', 'Direction']).agg(
+        Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index())
+    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs (all cost types), {int(legs["Empty"].sum())} empty, '
+          f'{len(socs)} SOC rows, {len(routes)} route rows')
     return {
         'strings': list(pool),
-        'rows': rows,    # Date, Cost Type*, Vendor*, SOC*, Direction*, Legs, Empty   (* = index into strings)
-        'legs': items,   # Date, LT, Cost Type*, Vendor*, Vehicle Type*, Direction*, SOC*, Hub*, Route*, Work_Hrs
-    }
-
-
-def build_ordered_vs_onsite(order, onsite, window_dates):
-    if order is None:
-        return {'rows': [], 'daily': {'dates': window_dates, 'rows': []}}
-
-    order = order.copy()
-    order['Start_dt'] = pd.to_datetime(order['Start'], errors='coerce')
-    order['End_dt'] = pd.to_datetime(order['End'], errors='coerce')
-
-    total_ordered = order.groupby(['Origin DC', 'Order Type'])['Qty'].sum().reset_index(name='Ordered')
-
-    onsite = onsite.copy()
-    if len(onsite):
-        onsite['Bucket'] = onsite['Vehicle Type'].apply(bucket_vehicle_type)
-        total_onsited = onsite.groupby(['Origin DC', 'Bucket'])['unit_key'].nunique().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
-    else:
-        total_onsited = pd.DataFrame(columns=['Origin DC', 'Vehicle Type', 'Onsited'])
-
-    total_ordered = total_ordered.rename(columns={'Order Type': 'Vehicle Type'})
-    rows = total_ordered.merge(total_onsited, on=['Origin DC', 'Vehicle Type'], how='outer').fillna(0)
-    rows['Ordered'] = rows['Ordered'].astype(int)
-    rows['Onsited'] = rows['Onsited'].astype(int)
-
-    daily_ordered_rows = []
-    for dt in window_dates:
-        d_ts = pd.Timestamp(dt)
-        active = order[(order['Start_dt'] <= d_ts) & (order['End_dt'] >= d_ts)]
-        g = active.groupby(['Origin DC', 'Order Type'])['Qty'].sum().reset_index(name='Ordered')
-        g['Date'] = dt
-        daily_ordered_rows.append(g)
-    daily_ordered = pd.concat(daily_ordered_rows, ignore_index=True) if daily_ordered_rows else pd.DataFrame(columns=['Origin DC', 'Order Type', 'Ordered', 'Date'])
-    daily_ordered = daily_ordered.rename(columns={'Order Type': 'Vehicle Type'})
-
-    if len(onsite):
-        daily_onsited = onsite.groupby(['Origin DC', 'Bucket', 'Date'])['unit_key'].nunique().reset_index(name='Onsited').rename(columns={'Bucket': 'Vehicle Type'})
-    else:
-        daily_onsited = pd.DataFrame(columns=['Origin DC', 'Vehicle Type', 'Date', 'Onsited'])
-
-    daily = daily_ordered.merge(daily_onsited, on=['Origin DC', 'Vehicle Type', 'Date'], how='outer').fillna(0)
-    daily['Ordered'] = daily['Ordered'].astype(int)
-    daily['Onsited'] = daily['Onsited'].astype(int)
-
-    return {
-        'rows': rows.to_dict('records'),
-        'daily': {'dates': window_dates, 'rows': daily.to_dict('records')},
+        'socs': socs,      # Date, Cost Type*, SOC*, Direction*, Legs, Empty   (* = index into strings)
+        'routes': routes,  # Date, Cost Type*, Route*, Direction*, Legs, Empty
+        'totals': totals,  # Date, Cost Type*, Region*, Direction*, Legs, Empty  - every leg, for headline rates
     }
 
 
@@ -490,31 +413,19 @@ def main():
     print('Fetching onsite registrations...')
     onsite = build_onsite(gc, window_dates)
 
-    print('Fetching order sheet...')
-    order = build_order(gc)
-
     print('Computing aggregates...')
     dashboard = build_dashboard_data(trips, window_dates)
     productivity = build_productivity(trips, onsite, window_dates)
-    ordered_vs_onsite = build_ordered_vs_onsite(order, onsite, window_dates)
-    dc_regions = build_dc_regions(trips, onsite, order)
+    dc_regions = build_dc_regions(trips, onsite, rel_legs['SOC'].unique())
+    empty_lt = build_empty_lt(all_lts, rel_legs, dc_regions)
 
     raw = dict(dashboard)
     raw['productivity'] = productivity
-    raw['empty_lt'] = build_empty_lt(all_lts, rel_legs)
-    raw['ordered_vs_onsite'] = ordered_vs_onsite['rows']
-    raw['ordered_vs_onsite_daily'] = ordered_vs_onsite['daily']
+    raw['empty_lt'] = empty_lt
     raw['dc_regions'] = dc_regions
     raw['generated_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    raw['order_sheet_available'] = order is not None
 
     errors = []
-    if order is None:
-        errors.append({
-            'source': 'DR order sheet',
-            'message': 'Could not be read (likely a sharing/permission issue for the service account). '
-                       'Ordered-vs-onsited figures are unavailable; onsited-only figures elsewhere are unaffected.',
-        })
     if not socsoc_ok:
         errors.append({
             'source': 'SOC-SOC trip tracker',

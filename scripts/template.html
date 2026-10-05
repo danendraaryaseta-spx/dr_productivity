@@ -3,1822 +3,824 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Rent Vendor Trip Analysis</title>
+<title>DR Productivity · SPX Linehaul</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
-
-  header {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
-    color: white; padding: 20px 32px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+:root {
+  color-scheme: light;
+  --page: #f6f5f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #ee4d2d;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --other: #b4b2aa;
+  --pos: 42, 120, 214;
+  --neg: 227, 73, 72;
+  --neutral: #ebeae5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --other: #5f5e59; --pos: 57, 135, 229; --neg: 230, 103, 103; --neutral: #2c2c2a;
   }
-  header h1 { font-size: 1.4rem; font-weight: 700; }
-  header p { font-size: 0.8rem; opacity: 0.7; margin-top: 3px; }
-  .badge { background: #06d6a0; color: #063; font-size: 0.7rem; font-weight: 700;
-    padding: 3px 10px; border-radius: 20px; }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --other: #5f5e59; --pos: 57, 135, 229; --neg: 230, 103, 103; --neutral: #2c2c2a;
+}
 
-  .main { padding: 24px 32px; max-width: 1600px; margin: 0 auto; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; }
+.num, td.n, th.n { font-variant-numeric: tabular-nums; text-align: right; }
 
-  .note { background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
-    padding: 10px 16px; font-size: 0.78rem; color: #7a5c00; margin-bottom: 20px; }
-  .note b { color: #5c4400; }
+/* ── header ─────────────────────────────────────────────── */
+.masthead { padding-block: 28px 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.eyebrow b { color: var(--accent); font-weight: 700; }
+h1 { font-size: 28px; line-height: 1.15; margin: 6px 0 0; font-weight: 700; letter-spacing: -.01em; }
+.updated { font-size: 13px; color: var(--ink-2); text-align: right; }
+.updated time { color: var(--ink); font-weight: 600; }
 
-  #errorBanner { display: none; background: #fdecea; border: 1px solid #f5b8b1; border-radius: 10px;
-    padding: 10px 16px; font-size: 0.78rem; color: #7a1c14; margin-bottom: 20px; }
-  #errorBanner b { color: #5c1510; }
+/* ── filter bar ─────────────────────────────────────────── */
+.filterbar { position: sticky; top: 0; z-index: 20; background: var(--page); border-block: 1px solid var(--border); }
+.filterbar .wrap { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding-block: 10px; }
+.fgroup { display: flex; align-items: center; gap: 8px; }
+.flabel { font-size: 12px; color: var(--muted); font-weight: 600; }
+select, input[type=date] {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-height: 32px;
+}
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); padding: 2px; }
+.seg button {
+  font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ink-2);
+  padding: 4px 10px; border-radius: 5px; cursor: pointer; min-height: 26px; white-space: nowrap;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600; }
+.seg button:focus-visible, .linkbtn:focus-visible, th button:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+.range-note { font-size: 12px; color: var(--muted); margin-left: auto; }
 
-  /* Summary Cards */
-  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-  .card { position: relative; background: white; border-radius: 12px; padding: 18px 22px 18px 30px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07); border: 1px solid #eee; }
-  .card::before { content: ''; position: absolute; left: 14px; top: 25px; width: 8px; height: 8px; border-radius: 50%; }
-  .card.blue::before  { background: #0f3460; }
-  .card.red::before   { background: #e94560; }
-  .card.green::before { background: #06d6a0; }
-  .card.gold::before  { background: #f4a261; }
-  .card-val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
-  .card.blue  .card-val { color: #0f3460; }
-  .card.red   .card-val { color: #e94560; }
-  .card.green .card-val { color: #06d6a0; }
-  .card.gold  .card-val { color: #f4a261; }
-  .card-lbl { font-size: 0.78rem; color: #666; margin-top: 4px; }
+.banner { margin-top: 16px; border: 1px solid rgba(var(--neg), .4); background: rgba(var(--neg), .08); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
 
-  /* Charts row */
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-  .chart-box { background: white; border-radius: 12px; padding: 20px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-  .chart-box.full { grid-column: 1 / -1; }
-  .chart-box h2 { font-size: 0.9rem; font-weight: 700; color: #1a1a2e; margin-bottom: 14px;
-    display: flex; align-items: center; justify-content: space-between; }
-  .chart-box h2 select { font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; border: 1px solid #ddd; }
-  .chart-wrap { position: relative; height: 280px; }
-  .chart-wrap.tall { height: 340px; }
+/* ── sections ───────────────────────────────────────────── */
+section { padding-block: 34px 10px; }
+.sec-head { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; align-items: baseline; margin-bottom: 18px; }
+.sec-num { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.sec-head h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.005em; }
+.sec-head p { grid-column: 2; margin: 2px 0 0; color: var(--ink-2); max-width: 760px; }
+details.how { grid-column: 2; margin-top: 4px; font-size: 13px; color: var(--ink-2); }
+details.how summary { cursor: pointer; color: var(--muted); font-weight: 600; width: max-content; }
+details.how div { margin-top: 6px; max-width: 760px; }
 
-  /* Filters */
-  .filters { background: white; border-radius: 12px; padding: 16px 20px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 16px;
-    display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-  .filters label { font-size: 0.78rem; color: #555; font-weight: 600; }
-  .filters select, .filters input {
-    border: 1px solid #ddd; border-radius: 7px; padding: 6px 10px;
-    font-size: 0.82rem; color: #1a1a2e; background: #fafafa; }
-  .filters select:focus-visible, .filters input:focus-visible {
-    outline: 2px solid #0f3460; outline-offset: 1px; border-color: #0f3460; }
-  .filter-group { display: flex; align-items: center; gap: 8px; }
-  .reset-btn { background: #e94560; color: white; border: none; border-radius: 7px;
-    padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600; }
-  .reset-btn:hover { background: #c73652; }
-  .export-btn { background: #0f3460; color: white; border: none; border-radius: 7px;
-    padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600;
-    display: inline-flex; align-items: center; gap: 6px; }
-  .export-btn:hover { background: #0c2a4d; }
-  .result-count { margin-left: auto; font-size: 0.78rem; color: #666; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+.card + .card, .stack > * + * { margin-top: 16px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.card-head .sub { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-  /* Table */
-  .table-box { background: white; border-radius: 12px; border: 1px solid #eee;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: hidden; margin-bottom: 24px; }
-  .table-box h2 { font-size: 0.9rem; font-weight: 700; padding: 16px 20px 0;
-    color: #1a1a2e; }
-  .table-box .subtxt { font-size: 0.76rem; color: #666; padding: 2px 20px 10px; }
-  .table-scroll { overflow-x: auto; max-height: 560px; overflow-y: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
-  thead { background: rgba(248,250,252,0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 #d1d5db; }
-  th { padding: 11px 14px; text-align: left; font-weight: 600; font-size: 0.72rem;
-    letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280;
-    white-space: nowrap; cursor: pointer; user-select: none; transition: color 150ms ease-out; }
-  th:hover { color: #0f3460; }
-  th .sort-icon { font-size: 0.65rem; margin-left: 4px; opacity: 0.6; }
-  tbody tr { background: transparent; transition: background-color 150ms ease-out; }
-  tbody tr:hover { background: #f8fafc; }
-  td { padding: 10px 14px; border-bottom: 1px solid #f1f1f3; vertical-align: middle;
-    max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  td.num { text-align: right; font-weight: 600; }
-  tfoot td { font-weight: 800; background: #f8f9fb; border-top: 1px solid #e5e7eb; }
+/* KPI tiles */
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .k { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.tile .v { font-size: 28px; font-weight: 700; line-height: 1.2; margin-top: 6px; letter-spacing: -.01em; }
+.tile .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.tile.hero { border-color: var(--ink); }
+.tile.hero .v { font-size: 34px; }
 
-  .vendor-tag {
-    display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 12px;
-    font-size: 0.72rem; font-weight: 700; white-space: nowrap;
-  }
-  .vendor-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.chart { position: relative; height: 260px; }
+.chart.short { height: 190px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 
-  .no-data { text-align: center; padding: 40px; color: #666; font-size: 0.9rem; white-space: normal; }
+/* tables */
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 12px; padding: 0; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+th button { font: inherit; color: inherit; background: none; border: 0; padding: 8px 8px; cursor: pointer; width: 100%; text-align: inherit; }
+th.n button { text-align: right; }
+th button[data-dir]::after { content: attr(data-dir); color: var(--ink); margin-left: 4px; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+tbody tr:hover td { background: var(--surface-2); }
+tfoot td { font-weight: 700; border-top: 1px solid var(--axis); border-bottom: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.linkbtn { font: inherit; font-size: 13px; color: var(--ink-2); background: none; border: 0; padding: 8px 0 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
-  /* Pagination */
-  .pagination { display: flex; align-items: center; gap: 8px;
-    padding: 14px 20px; border-top: 1px solid #f1f1f3; justify-content: space-between; }
-  .pagination button { border: 1px solid #e5e7eb; background: white; border-radius: 6px;
-    padding: 5px 11px; cursor: pointer; font-size: 0.8rem;
-    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; }
-  .pagination button:hover:not(:disabled) { background: #f8fafc; border-color: #0f3460; color: #0f3460; }
-  .pagination button:disabled { opacity: 0.35; cursor: default; }
-  .pagination span { font-size: 0.78rem; color: #666; }
+/* DC share list */
+.dclist { width: 100%; }
+.dcrow { display: grid; grid-template-columns: minmax(150px, 1.1fr) 170px minmax(200px, 2.4fr) 110px; gap: 16px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
+.dcrow.head { font-size: 12px; color: var(--ink-2); font-weight: 600; border-bottom: 1px solid var(--axis); padding-block: 4px 8px; }
+.dcname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcname small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.prodcell { display: flex; align-items: center; gap: 10px; }
+.prodval { font-size: 18px; font-weight: 700; width: 46px; text-align: right; }
+.track { position: relative; flex: 1; height: 16px; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 7px; height: 2px; background: var(--grid); border-radius: 1px; }
+.track .one { position: absolute; top: 2px; width: 1px; height: 12px; background: var(--axis); }
+.track .dot { position: absolute; top: 3px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.sharebar { display: flex; gap: 2px; height: 14px; }
+.sharebar span { display: block; height: 100%; min-width: 2px; }
+.sharebar span:first-child { border-radius: 4px 0 0 4px; }
+.sharebar span:last-child { border-radius: 0 4px 4px 0; }
+.sharebar span:only-child { border-radius: 4px; }
+.dcnums { font-size: 12px; color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* heat tables */
+.heat td.c { text-align: center; font-variant-numeric: tabular-nums; min-width: 46px; padding-inline: 4px; }
+.heat th.c button { text-align: center; padding-inline: 4px; }
+.heat th.c small { display: block; font-weight: 400; color: var(--muted); }
+.heat td.first, .heat th.first { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 170px; }
+.heat tbody tr:hover td.first { background: var(--surface-2); }
+.heat td.prod { font-weight: 700; }
+.heat td.dim, .heat tr.dim td { color: var(--muted); }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; }
+.scale { display: flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
+.scale span { width: 30px; height: 12px; border-radius: 2px; }
+.scale em { font-style: normal; margin: 0 6px; }
+
+/* empty legs */
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.split > .card + .card { margin-top: 0; }
+.chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+.barcell { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.barcell .b { height: 8px; border-radius: 0 4px 4px 0; background: rgb(var(--neg)); }
+.route { line-height: 1.35; }
+.route b { font-weight: 600; }
+.route .arrow { color: var(--muted); margin: 0 3px; }
+.rank { color: var(--muted); font-variant-numeric: tabular-nums; width: 24px; }
+.rate-hi { font-weight: 700; }
+
+/* tooltip */
+#tip { position: fixed; z-index: 50; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; padding: 7px 9px; border-radius: 6px; max-width: 280px; opacity: 0; transition: opacity .08s; }
+#tip b { font-weight: 700; }
+
+footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 1080px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .split { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dcrow { grid-template-columns: 1fr 120px; }
+  .dcrow .sharebar, .dcrow .dcnums, .dcrow.head > :nth-child(n+3) { grid-column: 1 / -1; }
+  .dcrow.head > :nth-child(n+3) { display: none; }
+  .range-note { margin-left: 0; }
+  h1 { font-size: 23px; }
+  .updated { text-align: left; }
+  .fgroup { flex-wrap: wrap; }
+  input[type=date] { flex: 1 1 130px; min-width: 0; }
+}
 </style>
 </head>
 <body>
 
-<header>
+<header class="wrap masthead">
   <div>
-    <h1>Daily Rent Vendor Trip Analysis</h1>
-    <p>SPX Express &middot; Cost Type = "By Day" &middot; First-leg trips only &middot; <span id="headerWindowTxt">rolling window</span></p>
+    <div class="eyebrow"><b>SPX Express</b> · Linehaul · Daily Rent</div>
+    <h1>DR truck productivity</h1>
   </div>
-  <span class="badge" id="liveBadge">&#9679; UPDATED <span id="generatedAtTxt"></span></span>
+  <div class="updated">Updated <time id="updatedAt">–</time><br><span id="dataSpan" class="small"></span></div>
 </header>
 
-<div class="main">
-
-  <div id="errorBanner">
-    <b>Some data sources could not be loaded:</b>
-    <ul id="errorList" style="margin:6px 0 0 20px;"></ul>
-    The rest of the dashboard reflects whatever loaded successfully.
+<nav class="filterbar" aria-label="Filters">
+  <div class="wrap">
+    <div class="fgroup">
+      <span class="flabel">Period</span>
+      <div class="seg" id="presetSeg">
+        <button type="button" data-preset="7">7 days</button>
+        <button type="button" data-preset="14">14 days</button>
+        <button type="button" data-preset="all">All</button>
+      </div>
+      <input type="date" id="fFrom" aria-label="From date">
+      <span class="muted">–</span>
+      <input type="date" id="fTo" aria-label="To date">
+    </div>
+    <div class="fgroup">
+      <label class="flabel" for="fRegion">Region</label>
+      <select id="fRegion"><option value="">All regions</option></select>
+    </div>
+    <div class="fgroup">
+      <label class="flabel" for="fVehicle">Vehicle</label>
+      <select id="fVehicle"><option value="">All vehicle types</option></select>
+    </div>
+    <span class="range-note" id="rangeNote"></span>
   </div>
+</nav>
 
-  <div class="note">
-    <b>Scope of this dashboard:</b> Each LT number is counted once, using only its <b>first leg</b> (the leg with the
-    earliest actual departure time, i.e. Origin DC departure). Trip data is pulled on a schedule from the
-    <a href="https://docs.google.com/spreadsheets/d/1nLurOQ1JJRRVcyA_-egi32J6nGj9darabA-al3OwG7E" target="_blank" rel="noopener">Linehaul Trip Compliance Tracker [SOC-LM]</a>
-    , <a href="https://docs.google.com/spreadsheets/d/1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0" target="_blank" rel="noopener">[FM-SOC]</a>
-    and <a href="https://docs.google.com/spreadsheets/d/11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU" target="_blank" rel="noopener">[SOC-SOC]</a>
-    "raw" tabs (combined, deduped where a trip appears in more than one). Only legs that had already <b>actually departed</b>
-    and were billed with Cost Type <b>"By Day"</b> (day-rate rented vehicles) and departed from a genuine
-    <b>Origin DC</b> (excludes First-Mile feeder legs starting at a collection Hub) are included.
-    Full available data spans <b id="dateRangeTxt">–</b>; use the <b>Date Window</b> control below to pick any
-    sub-range &mdash; every chart and table updates to that range while still showing daily figures. The most
-    recent day is usually partial since it's still in progress at load time.
-    <br><br>
-    <b>Known gap:</b> the SOC-SOC tracker only keeps roughly the last 9 days, while SOC-LM/FM-SOC go back further.
-    On older days in the window, SOC-SOC trips are missing, so DR units that ran SOC-SOC on those days can still
-    look under-productive.
-  </div>
+<main class="wrap">
+  <div id="errors"></div>
 
-  <!-- Global date window control -->
-  <div class="filters">
-    <div class="filter-group">
-      <label>Date Window</label>
-      <input type="date" id="fDateFrom">
-      <span style="color:#888">to</span>
-      <input type="date" id="fDateTo">
+  <!-- 01 ─────────────────────────────────────────────── -->
+  <section id="trend">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>Productivity trend</h2>
+      <p>Productivity is LT trips ÷ DR trucks onsite. At 1.0, each rented truck ran one trip a day.</p>
+      <details class="how"><summary>How it's counted</summary><div>
+        <b>Trucks onsite</b>: "By Day" check-ins on the On Site Registration sheet, excluding Expired and No Show.
+        The same plate checked in twice on one day counts once; on two days it counts twice (truck-days).
+        <b>LT trips</b>: each LT counted once on the day its first leg left a DC, billed "By Day", from the SOC-LM,
+        FM-SOC and SOC-SOC trackers. <b>Empty LT</b> and <b>working hours</b> use finished LTs only (every leg arrived);
+        working hours run from the truck reaching its first station to reaching its last.
+      </div></details>
     </div>
-    <button class="reset-btn" onclick="resetDateWindow()">Reset to Full Range</button>
-    <span class="result-count" id="dateWindowInfo"></span>
-  </div>
 
-  <!-- Summary Cards -->
-  <div class="cards">
-    <div class="card blue">
-      <div class="card-val" id="c-trips">–</div>
-      <div class="card-lbl">Total "By Day" Trips</div>
-    </div>
-    <div class="card red">
-      <div class="card-val" id="c-vendors">–</div>
-      <div class="card-lbl">Active Daily Rent Vendors</div>
-    </div>
-    <div class="card green">
-      <div class="card-val" id="c-dcs">–</div>
-      <div class="card-lbl">Origin DCs Covered</div>
-    </div>
-    <div class="card gold">
-      <div class="card-val" id="c-days">–</div>
-      <div class="card-lbl">Days with Data</div>
-    </div>
-  </div>
+    <div class="tiles" id="tiles"></div>
 
-  <!-- Charts -->
-  <div class="charts">
-    <div class="chart-box">
-      <h2>Trips by Vendor</h2>
-      <div class="chart-wrap"><canvas id="chartVendor"></canvas></div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Productivity by <span id="grainWord">day</span></h3>
+        <div class="controls">
+          <div class="seg" id="grainSeg">
+            <button type="button" data-grain="day" aria-pressed="true">Daily</button>
+            <button type="button" data-grain="week">Weekly</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart"><canvas id="prodChart" aria-label="Productivity over time"></canvas></div>
     </div>
-    <div class="chart-box">
-      <h2>Top 20 Origin DCs by Trips</h2>
-      <div class="chart-wrap"><canvas id="chartDC"></canvas></div>
-    </div>
-  </div>
 
-  <!-- Vendor Share, filterable by region + DC, metric = Trips or DR Onsited -->
-  <div class="charts">
-    <div class="chart-box full">
-      <h2>Vendor Share
-        <span style="display:flex; gap:8px;">
-          <select id="vendorShareMetric">
-            <option value="trips">Share of Trips</option>
-            <option value="onsited">Share of DR Onsited</option>
+    <div class="card">
+      <div class="card-head">
+        <h3>Trucks onsite vs LT trips</h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Trucks onsite (truck-days)</span><span><i style="background:var(--s2)"></i>LT trips</span></div>
+      </div>
+      <div class="chart short"><canvas id="volChart" aria-label="Trucks onsite and LT trips over time"></canvas></div>
+      <details class="how" style="margin-top:10px"><summary>Show numbers</summary><div class="tscroll" id="trendTable"></div></details>
+    </div>
+  </section>
+
+  <!-- 02 ─────────────────────────────────────────────── -->
+  <section id="dcs">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>DCs and vendors</h2>
+      <p>Which DCs and vendors get the most trips out of their rented trucks.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Productivity by DC <span class="sub">with each vendor's share of the DC's DR trips</span></h3>
+        <div class="controls">
+          <div class="seg" id="dcSortSeg">
+            <button type="button" data-sort="trips" aria-pressed="true">Most trips</button>
+            <button type="button" data-sort="high">Highest</button>
+            <button type="button" data-sort="low">Lowest</button>
+          </div>
+        </div>
+      </div>
+      <div class="legend" id="vendorLegend" style="margin-bottom:10px"></div>
+      <div class="dclist" id="dcList"></div>
+      <button type="button" class="linkbtn" id="dcMore"></button>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Productivity per DC, per day</h3>
+        <div class="controls">
+          <label class="flabel" for="dcMin">Hide DCs under</label>
+          <select id="dcMin">
+            <option value="0">0 truck-days</option>
+            <option value="10" selected>10 truck-days</option>
+            <option value="30">30 truck-days</option>
           </select>
-          <select id="vendorShareRegionFilter"><option value="">All Regions</option></select>
-          <select id="vendorShareDcFilter"><option value="">All DCs</option></select>
-        </span>
-      </h2>
-      <div class="chart-wrap" style="max-width:420px; margin:0 auto;"><canvas id="chartVendorShare"></canvas></div>
-    </div>
-  </div>
-
-  <!-- Productivity -->
-  <h2 style="font-size:1.05rem; font-weight:800; margin:32px 0 12px; color:#1a1a2e;">Vendor Productivity &mdash; Trips per Onsite Daily Rent Unit</h2>
-  <div class="note" style="background:#eef2ff; border-color:#c7d2fe; color:#28304d;">
-    DR = Daily Rent = Cost Type <b>"By Day"</b>, applied consistently on both sides of this ratio.
-    <b>Daily Onsited</b> = count of check-ins on the
-    <a href="https://docs.google.com/spreadsheets/d/1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y" target="_blank" rel="noopener">[29309] On Site Registration sheet</a>
-    with <code>cost_type = "By Day"</code> and <code>arrival_status</code> not <b>"Expired"</b> or <b>"No Show"</b> &mdash;
-    i.e. vehicles that actually showed up, whether On Time, Late, or still Pending check-out.
-    Deduped by distinct <b>Nopol (plate number) + Vendor</b> per day &mdash; if the same physical vehicle gets
-    registered more than once on the same day, it counts once. Rows without a Nopol filled in count individually.
-    <b>Daily LT (using DR)</b> = first-leg trips that had actually departed, billed Cost Type "By Day".
-    <b>Productivity</b> = Daily LT &divide; Daily Onsited.
-    <br><br>
-    <b>Finished LT</b> = an LT where every leg has a <code>dest_ata</code>; LTs still on the road are left out of
-    the next three measures, since they'd look empty or too short.
-    <b>Empty LT</b> = a finished LT whose pickup and delivery legs were all empty, using the same rules as
-    section 4 below (pickup: arrived at the SOC carrying 0 parcels; delivery: 0 loaded at the SOC and 0 unloaded
-    at its hubs). SOC &rarr; FM and LM &rarr; SOC legs are ignored, since they normally run empty.
-    "Not Depart" legs are ignored throughout.
-    <b>Working Hrs</b> = last leg's <code>dest_ata</code> &minus; first leg's <code>trip_ata</code>, i.e. from the truck
-    arriving at its first station to arriving at its final destination.
-    <b>Working Hrs per Onsited Unit</b> = total working hours &divide; Daily Onsited.
-  </div>
-
-  <div class="subtxt" id="pCardsScopeLabel" style="padding:0 0 10px; font-weight:600; color:#0f3460;"></div>
-  <div class="cards">
-    <div class="card blue">
-      <div class="card-val" id="p-units">–</div>
-      <div class="card-lbl">Total Onsited (vehicle-days)</div>
-    </div>
-    <div class="card red">
-      <div class="card-val" id="p-trips">–</div>
-      <div class="card-lbl">Total LT Trips using DR</div>
-    </div>
-    <div class="card green">
-      <div class="card-val" id="p-avg">–</div>
-      <div class="card-lbl">Overall Productivity (Trips/Onsited)</div>
-    </div>
-    <div class="card gold">
-      <div class="card-val" id="p-avgday">–</div>
-      <div class="card-lbl">Avg Onsited Units per Day</div>
-    </div>
-    <div class="card red">
-      <div class="card-val" id="p-empty">–</div>
-      <div class="card-lbl">Empty LTs (0 parcels on FM&rarr;SOC / SOC&rarr;LM legs)</div>
-    </div>
-    <div class="card blue">
-      <div class="card-val" id="p-hrs">–</div>
-      <div class="card-lbl">Avg Working Hrs per LT</div>
-    </div>
-    <div class="card green">
-      <div class="card-val" id="p-hrsunit">–</div>
-      <div class="card-lbl">Working Hrs per Onsited Unit (per day)</div>
-    </div>
-    <div class="card gold">
-      <div class="card-val" id="p-finished">–</div>
-      <div class="card-lbl">Finished LTs (basis for the 3 cards before)</div>
-    </div>
-  </div>
-
-  <!-- Productivity trend by DC -->
-  <div class="charts">
-    <div class="chart-box full">
-      <h2>Productivity Trend <span id="dcTrendLevelLabel">by DC (Top 10)</span> + Nationwide
-        <span style="display:flex; gap:8px;">
-          <select id="dcTrendLevel">
-            <option value="dc">DC Level</option>
-            <option value="region">Region Level</option>
-          </select>
-          <select id="dcTrendGranularity">
-            <option value="daily">Daily</option>
-            <option value="week">Week on Week</option>
-          </select>
-          <select id="dcTrendRegionFilter"><option value="">All Regions</option></select>
-          <select id="dcTrendVehicleFilter"><option value="">All Vehicle Types</option></select>
-        </span>
-      </h2>
-      <div class="chart-wrap tall"><canvas id="chartDcProductivity"></canvas></div>
-    </div>
-  </div>
-
-  <!-- DC Productivity & Vendor Share, filterable by region -->
-  <div class="charts">
-    <div class="chart-box full">
-      <h2>DC Productivity &amp; Vendor Share
-        <span style="display:flex; gap:8px;">
-          <select id="dcShareRegionFilter"><option value="">All Regions</option></select>
-          <select id="dcShareDcFilter"><option value="">All DCs</option></select>
-        </span>
-      </h2>
-      <div class="subtxt" style="padding:0 0 12px;">All Origin DCs in the selected region, over the selected Date Window. Bars = trips stacked by Vendor (visualizing each vendor's share); line = productivity (right axis). Pick a specific Origin DC to drill into its daily trend instead.</div>
-      <div class="chart-wrap tall" style="overflow-x:auto;">
-        <div id="chartDcShareInner" style="height:100%;"><canvas id="chartDcShare"></canvas></div>
+          <div class="scale" id="scaleA"></div>
+        </div>
       </div>
-      <div id="chartDcShareNoData" class="no-data" style="display:none;">No data for this selection.</div>
-    </div>
-  </div>
-
-  <!-- 1. Productivity per DC, per Day, filterable by Vehicle Type -->
-  <div class="table-box">
-    <h2>1. Productivity per DC, per Day
-      <select id="dcVehicleFilter"><option value="">All Vehicle Types</option></select>
-    </h2>
-    <div class="subtxt">Daily Onsited, Daily LT, and Productivity shown as separate columns per day, summed across vendors for that DC. "Overall" totals across the whole selected Date Window.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Region</label>
-        <select id="pdcRegion"><option value="">Nationwide</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Origin DC</label>
-        <select id="pdcDc"><option value="">All DCs</option></select>
-      </div>
-      <button class="export-btn" onclick="exportProdByDcDaily()">⬇ Export CSV</button>
-      <span class="result-count" id="pdcResultCount"></span>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr id="pdcHeadRow1"></tr>
-          <tr id="pdcHeadRow2"></tr>
-        </thead>
-        <tbody id="pdcBody"></tbody>
-        <tfoot><tr id="pdcFootRow"></tr></tfoot>
-      </table>
-    </div>
-  </div>
-
-  <!-- 2. Vendor x DC x Date onsite/LT table -->
-  <div class="table-box">
-    <h2>2. Productivity: Vendor, DC, Daily Onsited &amp; Daily LT using DR</h2>
-    <div class="subtxt">One row per Vendor &times; Origin DC &times; Vehicle Type &times; Day. Sortable, filterable.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Vendor</label>
-        <select id="fpVendor"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Vehicle Type</label>
-        <select id="fpVehicle"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Date</label>
-        <select id="fpDate"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Region</label>
-        <select id="fpRegion"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Origin DC</label>
-        <select id="fpDc"><option value="">All DCs</option></select>
-      </div>
-      <button class="reset-btn" onclick="resetProdFilters()">Reset</button>
-      <button class="export-btn" onclick="exportProdDetail()">⬇ Export CSV</button>
-      <span class="result-count" id="pResultCount"></span>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th onclick="pSortBy('Vendor')">Vendor <span class="sort-icon" id="ps-Vendor">↕</span></th>
-            <th onclick="pSortBy('Origin DC')">Origin DC <span class="sort-icon" id="ps-Origin DC">↕</span></th>
-            <th onclick="pSortBy('Vehicle Type')">Vehicle Type <span class="sort-icon" id="ps-Vehicle Type">↕</span></th>
-            <th onclick="pSortBy('Date')">Date <span class="sort-icon" id="ps-Date">↕</span></th>
-            <th onclick="pSortBy('Onsited')" style="text-align:right">Daily Onsited <span class="sort-icon" id="ps-Onsited">↕</span></th>
-            <th onclick="pSortBy('LT_Trips')" style="text-align:right">Daily LT using DR <span class="sort-icon" id="ps-LT_Trips">↓</span></th>
-            <th onclick="pSortBy('Productivity')" style="text-align:right">Productivity <span class="sort-icon" id="ps-Productivity">↕</span></th>
-            <th onclick="pSortBy('Empty_LT')" style="text-align:right">Empty LT <span class="sort-icon" id="ps-Empty_LT">↕</span></th>
-            <th onclick="pSortBy('Avg_Work_Hrs')" style="text-align:right">Avg Work Hrs <span class="sort-icon" id="ps-Avg_Work_Hrs">↕</span></th>
-          </tr>
-        </thead>
-        <tbody id="pDetailTableBody"></tbody>
-      </table>
-    </div>
-    <div class="pagination">
-      <span id="pPageInfo"></span>
-      <div style="display:flex; gap:8px;">
-        <button id="pBtnPrev" onclick="pChangePage(-1)">← Prev</button>
-        <button id="pBtnNext" onclick="pChangePage(1)">Next →</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 3. Productivity per Vendor, per Day, filterable by Vehicle Type -->
-  <div class="table-box">
-    <h2>3. Productivity per Vendor, per Day
-      <select id="vendorVehicleFilter"><option value="">All Vehicle Types</option></select>
-    </h2>
-    <div class="subtxt">Each cell shows the pure productivity ratio (Daily LT &divide; Daily Onsited), summed across DCs for that vendor. Export CSV for the full Onsited/LT breakdown.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <button class="export-btn" onclick="exportProdByVendorDaily()">⬇ Export CSV</button>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr id="pvHeadRow"></tr></thead>
-        <tbody id="pvBody"></tbody>
-        <tfoot><tr id="pvFootRow"></tr></tfoot>
-      </table>
-    </div>
-  </div>
-
-  <!-- 4. Empty pickup / delivery legs (0 parcels) by SOC -->
-  <div class="table-box">
-    <h2>4. Empty pickup &amp; delivery legs (0 parcels) &mdash; which SOCs drive them</h2>
-    <div class="subtxt">
-      Covers <b>every cost type</b> (In-House, By Day, By Month, By Trip, By Weight), not only DR, and every LT
-      including FM pickup routes that start at a hub. Legs with status <b>"Not Depart"</b> are ignored, and a leg
-      listed in more than one tracker counts once. Only legs that should carry parcels are checked:
-      <b>FM Hub &rarr; SOC</b> (pickup coming in; the SOC is the destination) and
-      <b>SOC &rarr; LM Hub</b> (delivery going out; the SOC is the origin). SOC &rarr; FM and LM &rarr; SOC legs are
-      ignored, since they normally run empty. <code>total_loaded</code> / <code>total_unloaded</code> belong to the
-      leg's origin station; blank counts as 0.
-      An <b>FM &rarr; SOC</b> leg is empty when the truck <b>arrives at the SOC carrying 0 parcels</b>: nothing loaded at
-      any hub since it last left a SOC (so a multi-stop pickup whose last FM hub had nothing isn't empty if earlier
-      stops gave parcels).
-      A <b>SOC &rarr; LM</b> leg is empty when <b>0 parcels were loaded at the SOC and 0 were unloaded at every hub</b> on
-      that delivery run (until the truck reaches the next SOC). Both are required because hubs often leave
-      <code>total_unloaded</code> blank even on full runs. Judged only once the run has arrived, since unloaded is
-      filled in after arrival.
-      <b>Empty rate</b> = empty legs &divide; all legs of that direction at that SOC.
-      Follows the Date Window. Click a SOC to list only its empty legs below.
-    </div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Cost Type</label>
-        <select id="elCostType"><option value="">All cost types</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Vendor</label>
-        <select id="elVendor"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Region (of SOC)</label>
-        <select id="elRegion"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Direction</label>
-        <select id="elDirection">
-          <option value="">Both</option>
-          <option value="FM → SOC">FM &rarr; SOC (pickup in)</option>
-          <option value="SOC → LM">SOC &rarr; LM (delivery out)</option>
-        </select>
-      </div>
-      <button class="export-btn" onclick="exportEmptyLegSocs()">⬇ Export CSV</button>
-      <span class="result-count" id="elSocCount"></span>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>SOC</th>
-            <th>Direction</th>
-            <th style="text-align:right">Empty legs</th>
-            <th style="text-align:right">All legs</th>
-            <th style="text-align:right">Empty rate</th>
-            <th style="text-align:right">Share of all empty legs</th>
-          </tr>
-        </thead>
-        <tbody id="elSocBody"></tbody>
-      </table>
+      <div class="tscroll"><table class="heat" id="dcHeat"></table></div>
     </div>
 
-    <h2 style="margin-top:8px;">Empty leg list <span id="elListScope" style="font-weight:600; font-size:0.85rem; color:#e94560;"></span></h2>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <button class="reset-btn" id="elClearSoc" onclick="selectEmptyLegSoc(null)" hidden>Show all SOCs</button>
-      <button class="export-btn" onclick="exportEmptyLegList()">⬇ Export CSV</button>
-      <span class="result-count" id="elListCount"></span>
+    <div class="card">
+      <div class="card-head">
+        <h3>Productivity per vendor, per day</h3>
+        <div class="controls"><div class="scale" id="scaleB"></div></div>
+      </div>
+      <div class="tscroll"><table class="heat" id="vHeat"></table></div>
     </div>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th><th>LT</th><th>Cost Type</th><th>Vendor</th><th>Vehicle Type</th><th>Leg</th>
-            <th>Route</th><th style="text-align:right">LT Work Hrs</th>
-          </tr>
-        </thead>
-        <tbody id="elListBody"></tbody>
-      </table>
-    </div>
-  </div>
+  </section>
 
-  <!-- Onsited DR per Vendor per DC -->
-  <div class="table-box">
-    <h2>Onsited DR &mdash; per Vendor, per Origin DC
-      <select id="vdVehicleFilter"><option value="">All Vehicle Types</option></select>
-    </h2>
-    <div class="subtxt">Distinct vehicles (deduped by Nopol + Vendor), per day, one row per Vendor &times; Origin DC.</div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Vendor</label>
-        <select id="vdVendorFilter"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Region</label>
-        <select id="vdRegion"><option value="">All</option></select>
-      </div>
-      <div class="filter-group">
-        <label>Origin DC</label>
-        <select id="vdDc"><option value="">All DCs</option></select>
-      </div>
-      <button class="export-btn" onclick="exportVendorDcOnsited()">⬇ Export CSV</button>
-      <span class="result-count" id="vdResultCount"></span>
+  <!-- 03 ─────────────────────────────────────────────── -->
+  <section id="empty">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Empty pickups and deliveries</h2>
+      <p>Legs that should carry parcels but ran with none, across every cost type (not only DR).</p>
+      <details class="how"><summary>How it's counted</summary><div>
+        <b>Pickup</b>: an FM hub → SOC leg is empty when the truck reached the SOC with 0 parcels loaded at any hub since it left the last SOC.
+        <b>Delivery</b>: a SOC → LM hub run is empty when 0 parcels were loaded at the SOC and 0 unloaded at its hubs (checked once the run has arrived).
+        SOC → FM and LM → SOC legs, "Not Depart" legs, and duplicate rows across trackers are left out.
+        The Vehicle filter doesn't apply here.
+      </div></details>
     </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr id="vdHeadRow"></tr></thead>
-        <tbody id="vdBody"></tbody>
-        <tfoot><tr id="vdFootRow"></tr></tfoot>
-      </table>
-    </div>
-  </div>
 
-  <!-- Ordered vs Onsited DR, daily -->
-  <div class="table-box">
-    <h2>Ordered DR vs Onsited DR, by Origin DC &amp; Vehicle Type &mdash; per Day</h2>
-    <div class="subtxt" id="ovoSubtxt">
-      Each cell reads <b>Ordered / Onsited</b>. <b>Ordered</b> = units booked on the
-      <a href="https://docs.google.com/spreadsheets/d/1nMWBta_RA7jrNWfluMSS4J07VoPkpVKqXeUbIOmYr5E" target="_blank" rel="noopener">DR order sheet</a>
-      whose contract window (Start&ndash;End date) covers that day. <b>Onsited</b> = distinct vehicles
-      (deduped by Nopol + Vendor) that checked in ("By Day", excl. Expired/No Show) at that DC on that
-      specific day. The order sheet only has two coarse
-      categories, <b>CDD L</b> and <b>WB</b>; WB is mapped to the onsite system's <b>TRONTON (10WH)</b> record,
-      and CDD L covers every other Vehicle Type recorded onsite. The Campaign-to-date column sums Onsited across
-      days, so it can exceed the campaign-to-date Ordered count.
-    </div>
-    <div class="filters" style="margin:0 20px 12px; box-shadow:none; padding:0;">
-      <div class="filter-group">
-        <label>Region</label>
-        <select id="ovoRegion"><option value="">All</option></select>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head" style="margin-bottom:0">
+        <div class="controls">
+          <span class="flabel">Cost type</span>
+          <div class="seg" id="emCostSeg"></div>
+        </div>
+        <div class="controls">
+          <span class="flabel">Leg</span>
+          <div class="seg" id="emDirSeg">
+            <button type="button" data-dir="" aria-pressed="true">Both</button>
+            <button type="button" data-dir="FM → SOC">Pickup</button>
+            <button type="button" data-dir="SOC → LM">Delivery</button>
+          </div>
+        </div>
       </div>
-      <div class="filter-group">
-        <label>Origin DC</label>
-        <select id="ovoDc"><option value="">All DCs</option></select>
-      </div>
-      <button class="export-btn" onclick="exportOrderedVsOnsite()">⬇ Export CSV</button>
-      <span class="result-count" id="ovoResultCount"></span>
     </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr id="ovoHeadRow"></tr></thead>
-        <tbody id="ovoBody"></tbody>
-        <tfoot><tr id="ovoFootRow"></tr></tfoot>
-      </table>
-    </div>
-  </div>
 
-</div>
+    <div class="tiles" id="emTiles" style="grid-template-columns:repeat(4,minmax(0,1fr))"></div>
+
+    <div class="split">
+      <div class="card">
+        <div class="card-head">
+          <h3>SOCs with the most empty legs</h3>
+          <div class="seg" id="socSortSeg">
+            <button type="button" data-sort="empty" aria-pressed="true">Count</button>
+            <button type="button" data-sort="rate">Rate</button>
+          </div>
+        </div>
+        <div class="tscroll"><table id="socTable"></table></div>
+        <button type="button" class="linkbtn" id="socMore"></button>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>Routes with the most empty legs</h3>
+          <div class="seg" id="routeSortSeg">
+            <button type="button" data-sort="empty" aria-pressed="true">Count</button>
+            <button type="button" data-sort="rate">Rate</button>
+          </div>
+        </div>
+        <div class="tscroll"><table id="routeTable"></table></div>
+        <button type="button" class="linkbtn" id="routeMore"></button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  Data: Linehaul Trip Compliance Tracker
+  (<a href="https://docs.google.com/spreadsheets/d/1nLurOQ1JJRRVcyA_-egi32J6nGj9darabA-al3OwG7E" target="_blank" rel="noopener">SOC-LM</a>,
+  <a href="https://docs.google.com/spreadsheets/d/1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0" target="_blank" rel="noopener">FM-SOC</a>,
+  <a href="https://docs.google.com/spreadsheets/d/11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU" target="_blank" rel="noopener">SOC-SOC</a>) and
+  <a href="https://docs.google.com/spreadsheets/d/1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y" target="_blank" rel="noopener">On Site Registration</a>.
+  Rebuilt every hour.
+</footer>
+
+<div id="tip" role="tooltip"></div>
 
 <script>
-// ── STATIC DATA EMBED ─────────────────────────────────────────────────────────
-// This page is pre-rendered by gh-sync/scripts/build.py on a schedule (GitHub
-// Actions) - no live Google Sheets reads happen at page-load time. RAW is the
-// full pre-computed dashboard payload, baked directly into this file.
+// Pre-rendered by scripts/build.py on a schedule (GitHub Actions); RAW is the whole payload.
 const RAW = __RAW_JSON__;
 
-document.addEventListener('DOMContentLoaded', function () {
-  if (RAW.errors && RAW.errors.length) {
-    document.getElementById('errorBanner').style.display = 'block';
-    document.getElementById('errorList').innerHTML = RAW.errors.map(function (e) {
-      return '<li><b>' + e.source + ':</b> ' + e.message + '</li>';
-    }).join('');
-    if (!RAW.order_sheet_available) {
-      document.getElementById('ovoSubtxt').innerHTML =
-        '<b style="color:#c0392b">Unavailable right now</b> &mdash; the DR order sheet could not be read ' +
-        '(likely a permissions issue for the service account this pipeline runs under). Onsited-only figures elsewhere ' +
-        'in this dashboard are unaffected.';
-    }
-  }
+// ── helpers ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const f2 = n => n == null || !isFinite(n) ? '–' : n.toFixed(2);
+const f1 = n => n == null || !isFinite(n) ? '–' : n.toFixed(1);
+const pct = (a, b) => b ? (100 * a / b) : null;
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dShort = d => `${+d.slice(8)} ${MONTHS[+d.slice(5, 7) - 1]}`;
+const ratio = (t, o) => o > 0 ? t / o : null;
 
-  document.getElementById('headerWindowTxt').textContent =
-    'generated ' + new Date(RAW.generated_at).toLocaleString();
-  document.getElementById('generatedAtTxt').textContent =
-    new Date(RAW.generated_at).toLocaleString();
-  document.getElementById('dateRangeTxt').textContent =
-    RAW.summary.date_min + ' to ' + RAW.summary.date_max;
+const P = RAW.productivity;
+const ALL_DATES = [...P.dates].sort();
+const regionOf = dc => RAW.dc_regions[dc] || 'Unknown';
+const DIR_LABEL = { 'FM → SOC': 'Pickup', 'SOC → LM': 'Delivery' };
 
-  initDashboard();
+// The day the build ran (WIB) is still in progress - its numbers are partial.
+const genWIB = new Date(new Date(RAW.generated_at).getTime() + 7 * 3600e3).toISOString().slice(0, 10);
+const PARTIAL_DAY = ALL_DATES[ALL_DATES.length - 1] === genWIB ? genWIB : null;
+
+// Vendor colours follow the vendor (ranked by all-time DR trips), never the current filter.
+const VENDOR_RANK = (() => {
+  const t = {};
+  P.detail.forEach(r => { t[r.Vendor] = (t[r.Vendor] || 0) + r.LT_Trips; });
+  return Object.keys(t).sort((a, b) => t[b] - t[a]);
+})();
+const vSlot = v => { const i = VENDOR_RANK.indexOf(v); return i >= 0 && i < 8 ? i + 1 : 0; };
+const vColor = v => vSlot(v) ? `var(--s${vSlot(v)})` : 'var(--other)';
+
+// Productivity shading: diverging around 1.0 (red below, blue above, grey at ~1).
+const BINS = [
+  [0.5, 'neg', .55, '< 0.5'], [0.75, 'neg', .35, '0.5'], [0.95, 'neg', .16, '0.75'],
+  [1.05, 'mid', 0, '1.0'], [1.25, 'pos', .16, '1.05'], [1.5, 'pos', .35, '1.25'], [Infinity, 'pos', .55, '≥ 1.5'],
+];
+function shade(v) {
+  if (v == null) return '';
+  const b = BINS.find(b => v < b[0]);
+  return b[1] === 'mid' ? 'var(--neutral)' : `rgba(var(--${b[1]}), ${b[2]})`;
+}
+function scaleLegend(el) {
+  el.innerHTML = '<em>Below 1.0</em>' + BINS.map(b => `<span style="background:${b[1] === 'mid' ? 'var(--neutral)' : `rgba(var(--${b[1]}),${b[2]})`}" title="${b[3]}"></span>`).join('') + '<em>Above</em>';
+}
+
+// ── tooltip for HTML marks ─────────────────────────────────────────────────
+const tip = $('tip');
+document.addEventListener('mousemove', e => {
+  const t = e.target.closest('[data-tip]');
+  if (!t) { tip.style.opacity = 0; return; }
+  tip.innerHTML = t.dataset.tip;
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = e.clientY + 16 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 10 : e.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.opacity = 1;
 });
 
-// ── VENDOR COLORS ─────────────────────────────────────────────────────────────
-const VENDOR_COLORS = {
-  Lynthaz:'#e94560', Unicorn:'#0f3460', Abimanyu:'#495057', GNU:'#f4a261',
-  TSC:'#06d6a0', ARSY:'#8338ec', Jeje:'#3a86ff', SYU:'#fb5607', RPL:'#c9184a',
-  KLI:'#ffbe0b', Logisly:'#2a9d8f', MTJ:'#7209b7', MTS:'#6d6875', PBI:'#d62828',
-  TSF:'#457b9d', ALP:'#80b918', KJM:'#ff006e', Panorama:'#1b4332'
+// ── state + filters ────────────────────────────────────────────────────────
+const S = {
+  from: ALL_DATES[0], to: ALL_DATES[ALL_DATES.length - 1], region: '', vehicle: '',
+  grain: 'day', dcSort: 'trips', dcAll: false,
+  dcHeatSort: { key: 'prod', dir: -1 }, vHeatSort: { key: 'trips', dir: -1 },
+  emCost: '', emDir: '', socSort: 'empty', routeSort: 'empty', socAll: false, routeAll: false,
 };
-const PALETTE = ['#0f3460','#e94560','#06d6a0','#f4a261','#8338ec','#3a86ff','#fb5607','#ffbe0b','#2a9d8f','#7209b7'];
-function vendorColor(v){ return VENDOR_COLORS[v] || '#999'; }
+const dates = () => ALL_DATES.filter(d => d >= S.from && d <= S.to);
+const inScope = r => (!S.region || regionOf(r['Origin DC']) === S.region) && (!S.vehicle || r['Vehicle Type'] === S.vehicle);
+function rows() { const ds = new Set(dates()); return P.detail.filter(r => ds.has(r.Date) && inScope(r)); }
 
-// ── CSV EXPORT (Excel opens .csv directly) ────────────────────────────────────
-function downloadCSV(filename, headers, rows) {
-  const esc = v => {
-    if (v === null || v === undefined) return '';
-    v = String(v);
-    if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
-    return v;
+function pressSeg(seg, attr, value) {
+  seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value)));
+}
+
+function setupFilters() {
+  const fFrom = $('fFrom'), fTo = $('fTo');
+  [fFrom, fTo].forEach(i => { i.min = ALL_DATES[0]; i.max = ALL_DATES[ALL_DATES.length - 1]; });
+  const applyDates = () => {
+    let a = fFrom.value || ALL_DATES[0], b = fTo.value || ALL_DATES[ALL_DATES.length - 1];
+    if (a > b) [a, b] = [b, a];
+    S.from = a; S.to = b; syncPreset(); render();
   };
-  const lines = [headers.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
-  const csv = String.fromCharCode(0xFEFF) + lines.join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// ── SHARED REGION + DC DROPDOWN FILTER ────────────────────────────────────────
-// Replaces free-text "Search DC" boxes across the dashboard. Region is only
-// present on the onsite sheet, but RAW.dc_regions (built server-side) maps
-// every DC seen anywhere - including trip-only DCs, tagged 'Unknown' - so this
-// works uniformly on both trip-based and onsite-based tables. The DC dropdown
-// narrows to the selected region and resets to "All DCs" if the previously
-// selected DC falls outside the newly selected region.
-function setupRegionDcFilter(regionSelId, dcSelId, onChange) {
-  const regionSel = document.getElementById(regionSelId);
-  const regions = [...new Set(Object.values(RAW.dc_regions))].sort();
-  regions.forEach(r => { let o = document.createElement('option'); o.value = r; o.textContent = r; regionSel.appendChild(o); });
-
-  function refreshDcOptions() {
-    const region = regionSel.value;
-    const dcSel = document.getElementById(dcSelId);
-    const keep = dcSel.value;
-    const dcs = Object.keys(RAW.dc_regions).filter(dc => !region || RAW.dc_regions[dc] === region).sort();
-    dcSel.innerHTML = '<option value="">All DCs</option>' + dcs.map(dc => `<option value="${dc}">${dc}</option>`).join('');
-    dcSel.value = dcs.includes(keep) ? keep : '';
-  }
-
-  regionSel.addEventListener('change', () => { refreshDcOptions(); onChange(); });
-  document.getElementById(dcSelId).addEventListener('change', onChange);
-  refreshDcOptions();
-}
-
-// ── STATE ─────────────────────────────────────────────────────────────────────
-// ALL_DATES = every date present anywhere in the data (the full campaign range).
-// DATES = the currently-selected sub-range from the Date Window control; every
-// chart/table below is computed off DATES, so narrowing the window re-scopes
-// everything while still rendering one data point per day within it.
-let ALL_DATES = [];
-let DATES = [];
-
-// ── INIT (runs once) ──────────────────────────────────────────────────────────
-function initDashboard() {
-  ALL_DATES = [...RAW.productivity.dates].sort();
-  DATES = ALL_DATES;
-
-  const fFrom = document.getElementById('fDateFrom');
-  const fTo = document.getElementById('fDateTo');
-  fFrom.min = fTo.min = ALL_DATES[0];
-  fFrom.max = fTo.max = ALL_DATES[ALL_DATES.length - 1];
-  fFrom.value = ALL_DATES[0];
-  fTo.value = ALL_DATES[ALL_DATES.length - 1];
-  fFrom.addEventListener('change', onDateWindowChange);
-  fTo.addEventListener('change', onDateWindowChange);
-
-  // One-time setup: populate filter dropdowns and attach their listeners.
-  // Re-rendering on Date Window changes is handled by refreshDashboard() below,
-  // calling only the render* functions so options/listeners aren't duplicated.
-  setupVendorShareChart();
-  setupDcProductivityChart();
-  setupDcShareChart();
-  setupProdByDcDaily();
-  setupProdByVendorDaily();
-  setupProdDetailTable();
-  setupVendorDcOnsitedTable();
-  setupOrderedVsOnsiteTable();
-  setupEmptyLtSection();
-
-  setupRegionDcFilter('fpRegion', 'fpDc', applyProdFilters);
-  setupRegionDcFilter('pdcRegion', 'pdcDc', renderProdByDcDaily);
-  setupRegionDcFilter('vdRegion', 'vdDc', renderVendorDcOnsitedTable);
-  setupRegionDcFilter('ovoRegion', 'ovoDc', ovoRenderTable);
-
-  refreshDashboard();
-}
-
-function onDateWindowChange() {
-  let from = document.getElementById('fDateFrom').value;
-  let to = document.getElementById('fDateTo').value;
-  if (from > to) { [from, to] = [to, from]; }
-  DATES = ALL_DATES.filter(d => d >= from && d <= to);
-  refreshDashboard();
-}
-
-function resetDateWindow() {
-  document.getElementById('fDateFrom').value = ALL_DATES[0];
-  document.getElementById('fDateTo').value = ALL_DATES[ALL_DATES.length - 1];
-  DATES = ALL_DATES;
-  refreshDashboard();
-}
-
-// Sum a {key, Date, Trips} record list down to totals-per-key within DATES
-function aggByKeyOverDates(records, keyField) {
-  const dset = new Set(DATES);
-  const map = {};
-  records.forEach(r => { if (dset.has(r.Date)) map[r[keyField]] = (map[r[keyField]] || 0) + r.Trips; });
-  return Object.keys(map).map(k => ({ [keyField]: k, Trips: map[k] })).sort((a,b) => b.Trips - a.Trips);
-}
-
-// ── REFRESH (runs on init + whenever the Date Window changes) ────────────────
-function refreshDashboard() {
-  document.getElementById('dateWindowInfo').textContent =
-    DATES.length ? `${DATES.length} of ${ALL_DATES.length} available days selected` : 'No days in range';
-
-  const byDateInRange = RAW.by_date.filter(r => DATES.includes(r.Date));
-  const vendorAgg = aggByKeyOverDates(RAW.by_vendor_date, 'Vendor');
-  const dcAgg = aggByKeyOverDates(RAW.by_dc_date, 'Origin DC');
-
-  document.getElementById('c-trips').textContent = byDateInRange.reduce((s,r)=>s+r.Trips,0).toLocaleString();
-  document.getElementById('c-vendors').textContent = vendorAgg.filter(v=>v.Trips>0).length;
-  document.getElementById('c-dcs').textContent = dcAgg.filter(d=>d.Trips>0).length;
-  document.getElementById('c-days').textContent = DATES.length;
-
-  buildVendorChart(vendorAgg);
-  buildDCChart(dcAgg);
-  renderVendorShareChart();
-  renderDcProductivityChart(); // also refreshes the productivity cards - see its end
-  renderDcShareChart();
-  applyProdFilters();
-  renderProdByDcDaily();
-  renderProdByVendorDaily();
-  renderEmptyLtSection();
-  renderVendorDcOnsitedTable();
-  ovoRenderTable();
-}
-
-// ── CHARTS ────────────────────────────────────────────────────────────────────
-let vendorChart = null, dcChart = null;
-
-function buildVendorChart(vendorAgg) {
-  const vendors = vendorAgg.filter(v=>v.Trips > 0);
-  if (vendorChart) vendorChart.destroy();
-  vendorChart = new Chart(document.getElementById('chartVendor'), {
-    type: 'bar',
-    data: {
-      labels: vendors.map(v=>v.Vendor),
-      datasets: [{
-        label: 'Trips',
-        data: vendors.map(v=>v.Trips),
-        backgroundColor: vendors.map(v=>vendorColor(v.Vendor)),
-        borderRadius: 5
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { ticks:{ font:{size:10} } },
-        y: { ticks:{ font:{size:11} }, beginAtZero:true }
-      }
-    }
+  fFrom.addEventListener('change', applyDates);
+  fTo.addEventListener('change', applyDates);
+  $('presetSeg').addEventListener('click', e => {
+    const p = e.target.closest('button')?.dataset.preset; if (!p) return;
+    S.to = ALL_DATES[ALL_DATES.length - 1];
+    S.from = p === 'all' ? ALL_DATES[0] : ALL_DATES[Math.max(0, ALL_DATES.length - +p)];
+    render();
   });
+  const regions = [...new Set(P.detail.map(r => regionOf(r['Origin DC'])))].sort();
+  regions.forEach(r => $('fRegion').add(new Option(r, r)));
+  [...new Set(P.detail.map(r => r['Vehicle Type']))].sort().forEach(v => $('fVehicle').add(new Option(v, v)));
+  $('fRegion').addEventListener('change', e => { S.region = e.target.value; render(); });
+  $('fVehicle').addEventListener('change', e => { S.vehicle = e.target.value; render(); });
+}
+function syncPreset() {
+  const n = dates().length, last = S.to === ALL_DATES[ALL_DATES.length - 1];
+  const p = !last ? '' : S.from === ALL_DATES[0] ? 'all' : n === 7 ? '7' : n === 14 ? '14' : '';
+  pressSeg($('presetSeg'), 'preset', p);
+  $('fFrom').value = S.from; $('fTo').value = S.to;
+  $('rangeNote').textContent = `${n} day${n === 1 ? '' : 's'} · ${dShort(S.from)} – ${dShort(S.to)}` + (S.to === PARTIAL_DAY ? ' (last day still in progress)' : '');
 }
 
-function buildDCChart(dcAgg) {
-  const dcs = dcAgg.slice(0,20);
-  if (dcChart) dcChart.destroy();
-  dcChart = new Chart(document.getElementById('chartDC'), {
-    type: 'bar',
-    data: {
-      labels: dcs.map(d=>d['Origin DC'].replace(' DC','').replace('Transit Point ','TP ')),
-      datasets: [{
-        label: 'Trips',
-        data: dcs.map(d=>d.Trips),
-        backgroundColor: '#0f3460cc',
-        borderRadius: 4
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { beginAtZero:true, ticks:{ font:{size:10} } },
-        y: { ticks:{ font:{size:10} } }
-      }
-    }
-  });
+// ── 01 trend ───────────────────────────────────────────────────────────────
+function tiles(el, items) {
+  el.innerHTML = items.map(t => `<div class="tile${t.hero ? ' hero' : ''}"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="s">${t.s}</div></div>`).join('');
 }
 
-// ── VENDOR SHARE OF TRIPS (pie, filterable by Region + DC) ───────────────────
-let vendorShareChart = null;
-
-function setupVendorShareChart() {
-  setupRegionDcFilter('vendorShareRegionFilter', 'vendorShareDcFilter', renderVendorShareChart);
-  document.getElementById('vendorShareMetric').addEventListener('change', renderVendorShareChart);
+function renderTiles(rs) {
+  const sum = k => rs.reduce((s, r) => s + (r[k] || 0), 0);
+  const on = sum('Onsited'), lt = sum('LT_Trips'), fin = sum('Finished_LT'), em = sum('Empty_LT'), hrs = sum('Work_Hrs');
+  const n = dates().length;
+  tiles($('tiles'), [
+    { k: 'Productivity', v: f2(ratio(lt, on)), s: 'LT trips per truck per day', hero: true },
+    { k: 'Trucks onsite', v: fmt(on), s: 'truck-days' },
+    { k: 'LT trips', v: fmt(lt), s: 'using DR trucks' },
+    { k: 'Avg trucks onsite', v: n ? fmt(on / n) : '–', s: 'per day' },
+    { k: 'Empty LTs', v: fmt(em), s: fin ? `${f1(pct(em, fin))}% of ${fmt(fin)} finished LTs` : 'no finished LTs' },
+    { k: 'Working hours', v: on ? f1(hrs / on) : '–', s: 'per truck per day' },
+  ]);
 }
 
-function renderVendorShareChart() {
-  const region = document.getElementById('vendorShareRegionFilter').value;
-  const dc = document.getElementById('vendorShareDcFilter').value;
-  const metric = document.getElementById('vendorShareMetric').value; // 'trips' | 'onsited'
-  const dset = new Set(DATES);
-
-  const src = RAW.productivity.detail.filter(r =>
-    dset.has(r.Date) &&
-    (!dc || r['Origin DC'] === dc) &&
-    (!region || RAW.dc_regions[r['Origin DC']] === region)
-  );
-
-  const map = {};
-  src.forEach(r => { map[r.Vendor] = (map[r.Vendor] || 0) + (metric === 'onsited' ? r.Onsited : r.LT_Trips); });
-  const vendors = Object.keys(map).filter(v => map[v] > 0).sort((a, b) => map[b] - map[a]);
-  const unitLabel = metric === 'onsited' ? 'onsited units' : 'trips';
-
-  if (vendorShareChart) vendorShareChart.destroy();
-  vendorShareChart = new Chart(document.getElementById('chartVendorShare'), {
-    type: 'pie',
-    data: {
-      labels: vendors,
-      datasets: [{
-        data: vendors.map(v => map[v]),
-        backgroundColor: vendors.map(v => vendorColor(v)),
-        borderColor: '#fff',
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const total = ctx.dataset.data.reduce((s, v) => s + v, 0);
-              const pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0';
-              return `${ctx.label}: ${ctx.parsed.toLocaleString()} ${unitLabel} (${pct}%)`;
-            }
-          }
-        }
-      }
-    }
-  });
+function weekStart(d) {
+  const dt = new Date(d + 'T00:00:00Z'), wd = (dt.getUTCDay() + 6) % 7;
+  return new Date(dt.getTime() - wd * 864e5).toISOString().slice(0, 10);
 }
 
-// ── PRODUCTIVITY ──────────────────────────────────────────────────────────────
-// Figures out what the Productivity Trend chart is *currently* showing, so the
-// summary cards can match it: which individual lines are checked in its
-// legend (not just the Region filter). Nationwide's own line is never itself
-// a scope target - hiding/showing it doesn't affect the cards.
-function computeTrendScope() {
-  const region = document.getElementById('dcTrendRegionFilter').value;
-
-  if (!dcProductivityChart || !dcTrendSeriesKeys.length) {
-    return { keys: null, field: null, label: 'Nationwide' };
-  }
-
-  const visibleKeys = [];
-  dcProductivityChart.data.datasets.forEach((ds, i) => {
-    if (i === 0) return; // dataset 0 is always the Nationwide reference line
-    if (!dcProductivityChart.getDatasetMeta(i).hidden) visibleKeys.push(dcTrendSeriesKeys[i - 1]);
-  });
-  const narrowed = visibleKeys.length < dcTrendSeriesKeys.length; // user unchecked something
-
-  const field = dcTrendLevelAtRender === 'region' ? 'region' : 'dc';
-  if (narrowed) {
-    const label = visibleKeys.length === 0 ? 'None selected'
-      : visibleKeys.length <= 3 ? visibleKeys.map(k => k.replace(' DC', '')).join(', ')
-      : `${visibleKeys.length} selected ${field === 'dc' ? 'DCs' : 'Regions'}`;
-    return { keys: visibleKeys, field, label };
-  }
-
-  // Nothing manually unchecked. DC Level + a Region filter already means
-  // "every DC in that region" (nothing is capped in that case - see
-  // renderDcProductivityChart) so it's an equally deliberate, real scope.
-  if (field === 'dc' && region) return { keys: dcTrendSeriesKeys, field, label: region };
-  // Otherwise (Region Level fully visible, or DC Level's Top-10-nationwide
-  // cap with nothing hidden) there's nothing deliberately narrowed - the
-  // Top 10 is a display cap, not a chosen scope, so fall back to nationwide.
-  return { keys: null, field: null, label: 'Nationwide' };
+function trendSeries(rs) {
+  const by = {};
+  dates().forEach(d => { const k = S.grain === 'week' ? weekStart(d) : d; by[k] = by[k] || { on: 0, lt: 0, fin: 0, em: 0, hrs: 0, partial: false }; if (d === PARTIAL_DAY) by[k].partial = true; });
+  rs.forEach(r => { const k = S.grain === 'week' ? weekStart(r.Date) : r.Date; const b = by[k]; b.on += r.Onsited; b.lt += r.LT_Trips; b.fin += r.Finished_LT || 0; b.em += r.Empty_LT || 0; b.hrs += r.Work_Hrs || 0; });
+  return Object.keys(by).sort().map(k => ({ key: k, label: S.grain === 'week' ? `w/c ${dShort(k)}` : dShort(k), ...by[k], prod: ratio(by[k].lt, by[k].on) }));
 }
 
-function buildProductivityCards() {
-  const vt = document.getElementById('dcTrendVehicleFilter').value;
-  const dset = new Set(DATES);
-  const scope = computeTrendScope();
-  const scopeSet = scope.keys ? new Set(scope.keys) : null;
+let prodChart, volChart;
+const oneLine = {
+  id: 'oneLine',
+  afterDraw(c) {
+    const y = c.scales.y, x = c.scales.x; if (!y || 1 > y.max) return;
+    const py = y.getPixelForValue(1), ctx = c.ctx;
+    ctx.save(); ctx.strokeStyle = css('--axis'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x.left, py); ctx.lineTo(x.right, py); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText('1.0 = one trip per truck', x.right, py - 5); ctx.restore();
+  },
+};
+const endLabel = {
+  id: 'endLabel',
+  afterDatasetsDraw(c) {
+    const meta = c.getDatasetMeta(0), data = c.data.datasets[0].data;
+    let i = data.length - 1; while (i >= 0 && data[i] == null) i--;
+    if (i < 0) return;
+    const pt = meta.data[i], ctx = c.ctx;
+    ctx.save(); ctx.fillStyle = css('--ink'); ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(data[i].toFixed(2), pt.x - 8, pt.y - 10); ctx.restore();
+  },
+};
 
-  const rows = RAW.productivity.detail.filter(r =>
-    dset.has(r.Date) &&
-    (!vt || r['Vehicle Type'] === vt) &&
-    (!scopeSet || scopeSet.has(scope.field === 'dc' ? r['Origin DC'] : (RAW.dc_regions[r['Origin DC']] || 'Unknown')))
-  );
-  const totalOnsited = rows.reduce((s,r)=>s+r.Onsited,0);
-  const totalTrips = rows.reduce((s,r)=>s+r.LT_Trips,0);
-  const overall = totalOnsited > 0 ? totalTrips / totalOnsited : null;
-  document.getElementById('p-units').textContent = totalOnsited.toLocaleString();
-  document.getElementById('p-trips').textContent = totalTrips.toLocaleString();
-  document.getElementById('p-avg').textContent = (overall === null ? 0 : overall).toFixed(2);
-  document.getElementById('p-avgday').textContent = DATES.length ? Math.round(totalOnsited / DATES.length).toLocaleString() : '0';
-  const finished = rows.reduce((s,r)=>s+(r.Finished_LT||0),0);
-  const empty = rows.reduce((s,r)=>s+(r.Empty_LT||0),0);
-  const hrs = rows.reduce((s,r)=>s+(r.Work_Hrs||0),0);
-  document.getElementById('p-empty').textContent = finished ? `${empty.toLocaleString()} (${(100 * empty / finished).toFixed(1)}%)` : '–';
-  document.getElementById('p-hrs').textContent = finished ? (hrs / finished).toFixed(1) : '–';
-  document.getElementById('p-hrsunit').textContent = totalOnsited ? (hrs / totalOnsited).toFixed(1) : '–';
-  document.getElementById('p-finished').textContent = finished.toLocaleString();
-
-  const scopeBits = [scope.label];
-  if (vt) scopeBits.push(vt);
-  document.getElementById('pCardsScopeLabel').textContent =
-    'Currently showing: ' + scopeBits.join(' · ') + ' (follows the Region filter and legend checkboxes on the Productivity Trend chart below)';
-}
-
-// Shared cell formatter: "LT / Onsited -> Productivity" used by the per-DC pivot table
-function fmtCell(c) {
-  if (!c || (c.Onsited === 0 && c.LT_Trips === 0)) return '–';
-  const prod = c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '<span style="color:#aaa">–</span>';
-  return `${c.LT_Trips} / ${c.Onsited} &rarr; <b>${prod}</b>`;
-}
-
-// Pure productivity ratio only, no LT/Onsited breakdown shown - used by the per-vendor pivot table
-function fmtProdOnly(c) {
-  if (!c || c.Onsited === 0) return '–';
-  return (c.LT_Trips / c.Onsited).toFixed(2);
-}
-
-// Groups RAW.productivity.detail by `groupField` x Date (within the selected Date Window),
-// optionally restricted to one Vehicle Type
-function pivotByField(groupField, vehicleType) {
-  const dates = DATES;
-  const dset = new Set(dates);
-  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vehicleType || r['Vehicle Type'] === vehicleType));
-  const map = {};
-  src.forEach(r => {
-    const k = r[groupField];
-    if (!map[k]) map[k] = {};
-    if (!map[k][r.Date]) map[k][r.Date] = { Onsited: 0, LT_Trips: 0 };
-    map[k][r.Date].Onsited += r.Onsited;
-    map[k][r.Date].LT_Trips += r.LT_Trips;
-  });
-  let rows = Object.keys(map).map(key => {
-    const row = { key };
-    let totO = 0, totT = 0;
-    dates.forEach(dt => {
-      const c = map[key][dt] || { Onsited: 0, LT_Trips: 0 };
-      row[dt] = c; totO += c.Onsited; totT += c.LT_Trips;
-    });
-    row.total = { Onsited: totO, LT_Trips: totT };
-    return row;
-  });
-  rows.sort((a, b) => b.total.LT_Trips - a.total.LT_Trips);
-  return { dates, rows };
-}
-
-function pivotFootRow(rows, dates, formatter) {
-  formatter = formatter || fmtCell;
-  let footHtml = '';
-  dates.forEach(dt => {
-    const o = rows.reduce((s, r) => s + r[dt].Onsited, 0);
-    const t = rows.reduce((s, r) => s + r[dt].LT_Trips, 0);
-    footHtml += `<td class="num">${formatter({ Onsited: o, LT_Trips: t })}</td>`;
-  });
-  const go = rows.reduce((s, r) => s + r.total.Onsited, 0);
-  const gt = rows.reduce((s, r) => s + r.total.LT_Trips, 0);
-  footHtml += `<td class="num">${formatter({ Onsited: go, LT_Trips: gt })}</td>`;
-  return footHtml;
-}
-
-// Shared CSV export for the two pivot tables below (DC-per-day, Vendor-per-day):
-// expands each date into 3 numeric columns rather than the combined display string
-function exportPivotCSV(filename, rowLabel, rows, dates) {
-  const headers = [rowLabel];
-  dates.forEach(dt => headers.push(dt + ' Onsited', dt + ' LT Trips', dt + ' Productivity'));
-  headers.push('Total Onsited', 'Total LT Trips', 'Total Productivity');
-  const csvRows = rows.map(r => {
-    const row = [r.key];
-    dates.forEach(dt => {
-      const c = r[dt] || { Onsited: 0, LT_Trips: 0 };
-      row.push(c.Onsited, c.LT_Trips, c.Onsited > 0 ? (c.LT_Trips / c.Onsited).toFixed(2) : '');
-    });
-    row.push(r.total.Onsited, r.total.LT_Trips, r.total.Onsited > 0 ? (r.total.LT_Trips / r.total.Onsited).toFixed(2) : '');
-    return row;
-  });
-  downloadCSV(filename, headers, csvRows);
-}
-
-// ── PRODUCTIVITY TREND CHART (Top 10 DCs + Nationwide, Daily or Week-on-Week) ─
-let dcProductivityChart = null;
-// Raw key (DC name or region name) per plotted series, aligned so index i of
-// this array = dataset index i+1 in the chart (dataset 0 is always Nationwide).
-// Lets the legend click handler map "which line did they toggle" back to a
-// real filterable key, since the on-chart label is a shortened display name.
-let dcTrendSeriesKeys = [];
-let dcTrendLevelAtRender = 'dc';
-
-function setupDcProductivityChart() {
-  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
-  const sel = document.getElementById('dcTrendVehicleFilter');
-  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
-  sel.addEventListener('change', renderDcProductivityChart);
-
-  const regions = [...new Set(Object.values(RAW.dc_regions))].sort();
-  const regionSel = document.getElementById('dcTrendRegionFilter');
-  regions.forEach(r => { let o = document.createElement('option'); o.value = r; o.textContent = r; regionSel.appendChild(o); });
-  regionSel.addEventListener('change', renderDcProductivityChart);
-
-  document.getElementById('dcTrendGranularity').addEventListener('change', renderDcProductivityChart);
-  document.getElementById('dcTrendLevel').addEventListener('change', renderDcProductivityChart);
-}
-
-// Groups RAW.productivity.detail by each DC's Region (a derived field, via
-// RAW.dc_regions) x Date, within DATES, optionally restricted to one Vehicle
-// Type. Same shape as pivotByField's return, but keyed by region instead of
-// a raw field on the row.
-function pivotByRegion(vehicleType) {
-  const dates = DATES;
-  const dset = new Set(dates);
-  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vehicleType || r['Vehicle Type'] === vehicleType));
-  const map = {};
-  src.forEach(r => {
-    const k = RAW.dc_regions[r['Origin DC']] || 'Unknown';
-    if (!map[k]) map[k] = {};
-    if (!map[k][r.Date]) map[k][r.Date] = { Onsited: 0, LT_Trips: 0 };
-    map[k][r.Date].Onsited += r.Onsited;
-    map[k][r.Date].LT_Trips += r.LT_Trips;
-  });
-  let rows = Object.keys(map).map(key => {
-    const row = { key };
-    let totO = 0, totT = 0;
-    dates.forEach(dt => {
-      const c = map[key][dt] || { Onsited: 0, LT_Trips: 0 };
-      row[dt] = c; totO += c.Onsited; totT += c.LT_Trips;
-    });
-    row.total = { Onsited: totO, LT_Trips: totT };
-    return row;
-  });
-  rows.sort((a, b) => b.total.LT_Trips - a.total.LT_Trips);
-  return { dates, rows };
-}
-
-// Buckets a chronological list of date strings into weeks (Monday-start) or,
-// for daily granularity, one date per bucket (a no-op grouping).
-function bucketDatesByGranularity(dates, granularity) {
-  if (granularity !== 'week') return dates.map(dt => [dt]);
-  const buckets = {};
-  dates.forEach(dt => {
-    const d = new Date(dt + 'T00:00:00Z');
-    const diffToMonday = (d.getUTCDay() + 6) % 7;
-    d.setUTCDate(d.getUTCDate() - diffToMonday);
-    const wk = d.toISOString().slice(0, 10);
-    (buckets[wk] = buckets[wk] || []).push(dt);
-  });
-  return Object.keys(buckets).sort().map(wk => buckets[wk]);
-}
-
-// Sums a {date: {Onsited, LT_Trips}} map over one bucket's dates into a single
-// productivity ratio. Works for both per-DC rows (from pivotByField) and the
-// nationwide per-date totals map, since both share the same per-date shape.
-function aggregateOverBucket(dateMap, bucketDates) {
-  let o = 0, t = 0;
-  bucketDates.forEach(dt => { const c = dateMap[dt] || { Onsited: 0, LT_Trips: 0 }; o += c.Onsited; t += c.LT_Trips; });
-  return o > 0 ? Number((t / o).toFixed(2)) : null;
-}
-
-// Nationwide = ALL DCs regardless of the Region filter (a stable baseline to
-// compare individual regions/DCs against) - only Vehicle Type + Date Window apply.
-function computeNationwideByDate(vt) {
-  const dset = new Set(DATES);
-  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!vt || r['Vehicle Type'] === vt));
-  const byDate = {};
-  DATES.forEach(dt => { byDate[dt] = { Onsited: 0, LT_Trips: 0 }; });
-  src.forEach(r => { byDate[r.Date].Onsited += r.Onsited; byDate[r.Date].LT_Trips += r.LT_Trips; });
-  return byDate;
-}
-
-function renderDcProductivityChart() {
-  const vt = document.getElementById('dcTrendVehicleFilter').value;
-  const region = document.getElementById('dcTrendRegionFilter').value;
-  const granularity = document.getElementById('dcTrendGranularity').value;
-  const level = document.getElementById('dcTrendLevel').value; // 'dc' | 'region'
-
-  // Region Level shows every region as its own line, so per-region filtering
-  // to a single region would leave nothing to compare - disable it in that mode.
-  document.getElementById('dcTrendRegionFilter').disabled = (level === 'region');
-  document.getElementById('dcTrendLevelLabel').textContent = level === 'region' ? 'by Region' : (region ? 'by DC' : 'by DC (Top 10)');
-
-  let dates, seriesRows;
-  if (level === 'region') {
-    const result = pivotByRegion(vt);
-    dates = result.dates;
-    seriesRows = result.rows;
-  } else {
-    const { dates: d, rows: allRows } = pivotByField('Origin DC', vt);
-    dates = d;
-    const rows = allRows.filter(r => !region || RAW.dc_regions[r.key] === region);
-    // A region narrows the pool enough to show every DC in it; unfiltered
-    // (nationwide) still caps at Top 10 so the chart stays readable.
-    seriesRows = region ? rows : rows.slice(0, 10);
-  }
-
-  const buckets = bucketDatesByGranularity(dates, granularity);
-  const labels = buckets.map(b => granularity === 'week' ? 'Wk ' + b[0] : b[0]);
-
-  const nationwideByDate = computeNationwideByDate(vt);
-  const nationwideDataset = {
-    label: 'Nationwide (All DCs)',
-    data: buckets.map(b => aggregateOverBucket(nationwideByDate, b)),
-    borderColor: '#1a1a2e',
-    backgroundColor: '#1a1a2e22',
-    borderWidth: 3,
-    pointRadius: 4,
-    spanGaps: true,
-    tension: 0.25, fill: false
-  };
-
-  const seriesDatasets = seriesRows.map((r, i) => ({
-    label: level === 'region' ? r.key : r.key.replace(' DC', '').replace('Transit Point ', 'TP '),
-    data: buckets.map(b => aggregateOverBucket(r, b)),
-    borderColor: PALETTE[i % PALETTE.length],
-    backgroundColor: PALETTE[i % PALETTE.length] + '33',
-    spanGaps: true,
-    tension: 0.25, fill: false
-  }));
-
-  dcTrendSeriesKeys = seriesRows.map(r => r.key);
-  dcTrendLevelAtRender = level;
-
-  if (dcProductivityChart) dcProductivityChart.destroy();
-  dcProductivityChart = new Chart(document.getElementById('chartDcProductivity'), {
-    type: 'line',
-    data: { labels, datasets: [nationwideDataset, ...seriesDatasets] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top', labels: { boxWidth: 12, font: { size: 10 } },
-          // Keep the default show/hide-on-click behavior, but also recompute
-          // the summary cards so checking/unchecking a line updates their scope.
-          onClick: (e, legendItem, legend) => {
-            const index = legendItem.datasetIndex;
-            const ci = legend.chart;
-            if (ci.isDatasetVisible(index)) { ci.hide(index); legendItem.hidden = true; }
-            else { ci.show(index); legendItem.hidden = false; }
-            buildProductivityCards();
-          }
-        }
+function baseOptions() {
+  const muted = css('--muted'), grid = css('--grid'), axis = css('--axis');
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: css('--ink'), titleColor: css('--surface'), bodyColor: css('--surface'),
+        padding: 9, cornerRadius: 6, displayColors: true, boxWidth: 8, boxHeight: 8, usePointStyle: false,
       },
-      scales: {
-        x: { ticks: { font: { size: 11 } } },
-        y: { beginAtZero: true, title: { display: true, text: 'Productivity (Trips/Onsited)' }, ticks: { font: { size: 11 } } }
-      }
-    }
-  });
-
-  // Keep the summary cards in sync with this chart's own filters too, not
-  // just Date Window changes - this is the single place all of its trigger
-  // paths (Date Window refresh, Level/Region/Vehicle Type dropdowns) funnel through.
-  buildProductivityCards();
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: axis }, ticks: { color: muted, maxRotation: 0, autoSkipPadding: 14, font: { size: 11 } } },
+      y: { beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: muted, font: { size: 11 }, maxTicksLimit: 6 } },
+    },
+  };
 }
 
-// ── DC PRODUCTIVITY & VENDOR SHARE ────────────────────────────────────────────
-// No DC picked: x-axis = DC (all DCs in the selected region). A DC picked:
-// x-axis = Date, drilling into that one DC's daily trend instead.
-let dcShareChart = null;
+function renderTrend(rs) {
+  const ser = trendSeries(rs);
+  $('grainWord').textContent = S.grain === 'week' ? 'week' : 'day';
+  const labels = ser.map(s => s.label);
+  const s1 = css('--s1'), s2 = css('--s2'), surface = css('--surface');
 
-function setupDcShareChart() {
-  setupRegionDcFilter('dcShareRegionFilter', 'dcShareDcFilter', renderDcShareChart);
-}
-
-// Aggregates RAW.productivity.detail (within DATES, optionally one Region) into,
-// per DC: trips-by-vendor (for the stacked share bars) and overall productivity
-function computeDcShareData(region) {
-  const dset = new Set(DATES);
-  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && (!region || RAW.dc_regions[r['Origin DC']] === region));
-  const dcMap = {};
-  src.forEach(r => {
-    const dc = r['Origin DC'];
-    if (!dcMap[dc]) dcMap[dc] = { vendorTrips: {}, totalOnsited: 0, totalTrips: 0 };
-    dcMap[dc].vendorTrips[r.Vendor] = (dcMap[dc].vendorTrips[r.Vendor] || 0) + r.LT_Trips;
-    dcMap[dc].totalOnsited += r.Onsited;
-    dcMap[dc].totalTrips += r.LT_Trips;
-  });
-  const dcs = Object.keys(dcMap)
-    .filter(dc => dcMap[dc].totalTrips > 0)
-    .sort((a, b) => dcMap[b].totalTrips - dcMap[a].totalTrips);
-  return { dcs, dcMap };
-}
-
-// Same for a single DC's daily figures (drill-down mode)
-function computeDcShareDataByDay(dc) {
-  const dset = new Set(DATES);
-  const src = RAW.productivity.detail.filter(r => dset.has(r.Date) && r['Origin DC'] === dc);
-  const dayMap = {};
-  DATES.forEach(dt => { dayMap[dt] = { vendorTrips: {}, totalOnsited: 0, totalTrips: 0 }; });
-  src.forEach(r => {
-    const d = dayMap[r.Date];
-    d.vendorTrips[r.Vendor] = (d.vendorTrips[r.Vendor] || 0) + r.LT_Trips;
-    d.totalOnsited += r.Onsited;
-    d.totalTrips += r.LT_Trips;
-  });
-  return dayMap;
-}
-
-// Shared combo-chart renderer: stacked bar per key (Vendor) + a productivity
-// line on a secondary axis. `rawKeys` drives the data lookups; `displayLabels`
-// is what's actually shown on the x-axis (may differ, e.g. shortened DC names)
-function renderShareComboChart(rawKeys, displayLabels, vendors, vendorDataFn, prodDataFn) {
-  const wrap = document.getElementById('chartDcShareInner').closest('.chart-wrap');
-  const noDataEl = document.getElementById('chartDcShareNoData');
-
-  // No vendors means no trips at all for this selection (vendor keys only
-  // exist where a trip was recorded) - show a message instead of an empty chart
-  if (vendors.length === 0) {
-    if (dcShareChart) { dcShareChart.destroy(); dcShareChart = null; }
-    wrap.style.display = 'none';
-    noDataEl.style.display = 'block';
-    return;
-  }
-  wrap.style.display = '';
-  noDataEl.style.display = 'none';
-
-  const barDatasets = vendors.map(v => ({
-    type: 'bar',
-    label: v,
-    data: rawKeys.map(k => vendorDataFn(k, v)),
-    backgroundColor: vendorColor(v),
-    stack: 'share',
-    yAxisID: 'y',
-  }));
-  const prodDataset = {
+  const po = baseOptions();
+  po.scales.y.suggestedMax = 1.6;
+  po.plugins.tooltip.callbacks = {
+    title: items => ser[items[0].dataIndex].label + (ser[items[0].dataIndex].partial ? ' (in progress)' : ''),
+    label: it => { const s = ser[it.dataIndex]; return [` Productivity ${f2(s.prod)}`, ` ${fmt(s.lt)} trips ÷ ${fmt(s.on)} truck-days`]; },
+  };
+  if (prodChart) prodChart.destroy();
+  prodChart = new Chart($('prodChart'), {
     type: 'line',
-    label: 'Productivity',
-    data: rawKeys.map(k => prodDataFn(k)),
-    borderColor: '#1a1a2e',
-    backgroundColor: '#1a1a2e',
-    borderWidth: 2,
-    pointRadius: 3,
-    spanGaps: true,
-    yAxisID: 'y1',
+    data: { labels, datasets: [{
+      data: ser.map(s => s.prod), borderColor: s1, backgroundColor: s1, borderWidth: 2, tension: .25, spanGaps: true,
+      pointRadius: ser.map((s, i) => i === ser.length - 1 || s.partial ? 4 : 0),
+      pointBackgroundColor: ser.map(s => s.partial ? surface : s1), pointBorderColor: s1, pointBorderWidth: 2, pointHoverRadius: 5,
+      segment: { borderDash: c => ser[c.p1DataIndex]?.partial ? [4, 4] : undefined },
+    }] },
+    options: po, plugins: [oneLine, endLabel],
+  });
+
+  const vo = baseOptions();
+  vo.plugins.tooltip.callbacks = {
+    title: items => ser[items[0].dataIndex].label + (ser[items[0].dataIndex].partial ? ' (in progress)' : ''),
+    label: it => ` ${it.dataset.label}: ${fmt(it.raw)}`,
   };
-
-  // Widen the scrollable inner wrapper so bars stay readable with many categories
-  const inner = document.getElementById('chartDcShareInner');
-  const visibleWidth = inner.parentElement.clientWidth;
-  inner.style.width = Math.max(visibleWidth, rawKeys.length * 42) + 'px';
-
-  if (dcShareChart) dcShareChart.destroy();
-  dcShareChart = new Chart(document.getElementById('chartDcShare'), {
+  vo.datasets = { bar: { categoryPercentage: .72, barPercentage: .92 } };
+  if (volChart) volChart.destroy();
+  volChart = new Chart($('volChart'), {
     type: 'bar',
-    data: { labels: displayLabels, datasets: [...barDatasets, prodDataset] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
-      scales: {
-        x: { stacked: true, ticks: { font: { size: 10 }, maxRotation: 60, minRotation: 40 } },
-        y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Trips (stacked by Vendor)' }, ticks: { font: { size: 10 } } },
-        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Productivity' }, ticks: { font: { size: 10 } } },
-      }
-    }
+    data: { labels, datasets: [
+      { label: 'Trucks onsite', data: ser.map(s => s.on), backgroundColor: s1, borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom' },
+      { label: 'LT trips', data: ser.map(s => s.lt), backgroundColor: s2, borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom' },
+    ] },
+    options: vo,
   });
+
+  $('trendTable').innerHTML = `<table><thead><tr><th style="padding:8px">${S.grain === 'week' ? 'Week' : 'Date'}</th><th class="n" style="padding:8px">Trucks onsite</th><th class="n" style="padding:8px">LT trips</th><th class="n" style="padding:8px">Productivity</th><th class="n" style="padding:8px">Empty LTs</th><th class="n" style="padding:8px">Work hrs / truck</th></tr></thead><tbody>` +
+    ser.map(s => `<tr><td>${s.label}${s.partial ? ' <span class="muted small">in progress</span>' : ''}</td><td class="n">${fmt(s.on)}</td><td class="n">${fmt(s.lt)}</td><td class="n"><b>${f2(s.prod)}</b></td><td class="n">${fmt(s.em)}</td><td class="n">${s.on ? f1(s.hrs / s.on) : '–'}</td></tr>`).join('') + '</tbody></table>';
 }
 
-function renderDcShareChart() {
-  const region = document.getElementById('dcShareRegionFilter').value;
-  const dcFilter = document.getElementById('dcShareDcFilter').value;
+// ── 02 DCs and vendors ─────────────────────────────────────────────────────
+const DC_LIMIT = 15;
 
-  if (dcFilter) {
-    const dayMap = computeDcShareDataByDay(dcFilter);
-    const vendors = [...new Set(DATES.flatMap(dt => Object.keys(dayMap[dt].vendorTrips)))].sort();
-    renderShareComboChart(
-      DATES, DATES, vendors,
-      (dt, v) => dayMap[dt].vendorTrips[v] || 0,
-      dt => dayMap[dt].totalOnsited > 0 ? Number((dayMap[dt].totalTrips / dayMap[dt].totalOnsited).toFixed(2)) : null
-    );
-    return;
-  }
-
-  const { dcs, dcMap } = computeDcShareData(region);
-  const vendors = [...new Set(dcs.flatMap(dc => Object.keys(dcMap[dc].vendorTrips)))].sort();
-  const displayLabels = dcs.map(dc => dc.replace(' DC', '').replace('Transit Point ', 'TP '));
-  renderShareComboChart(
-    dcs, displayLabels, vendors,
-    (dc, v) => dcMap[dc].vendorTrips[v] || 0,
-    dc => dcMap[dc].totalOnsited > 0 ? Number((dcMap[dc].totalTrips / dcMap[dc].totalOnsited).toFixed(2)) : null
-  );
+function renderVendorLegend(rs) {
+  const present = new Set(rs.filter(r => r.LT_Trips).map(r => r.Vendor));
+  const named = VENDOR_RANK.slice(0, 8).filter(v => present.has(v));
+  const hasOther = [...present].some(v => !vSlot(v));
+  $('vendorLegend').innerHTML = named.map(v => `<span><i style="background:${vColor(v)}"></i>${esc(v)}</span>`).join('') + (hasOther ? '<span><i style="background:var(--other)"></i>Other vendors</span>' : '');
 }
 
-// ── 1. Productivity per DC, per Day (full detail: Onsited, LT, Productivity) ─
-function setupProdByDcDaily() {
-  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
-  const sel = document.getElementById('dcVehicleFilter');
-  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
-  sel.addEventListener('change', renderProdByDcDaily);
-}
-
-let pdcFilteredRows = [], pdcDates = [];
-
-const PDC_SUBCOLS = ['Onsited', 'LT', 'Productivity'];
-
-function renderProdByDcDaily() {
-  const vt = document.getElementById('dcVehicleFilter').value;
-  const region = document.getElementById('pdcRegion').value;
-  const dc = document.getElementById('pdcDc').value;
-  const { dates, rows: allRows } = pivotByField('Origin DC', vt);
-  const rows = allRows.filter(r => (!dc || r.key===dc) && (!region || RAW.dc_regions[r.key]===region));
-  pdcFilteredRows = rows;
-  pdcDates = dates;
-
-  document.getElementById('pdcResultCount').textContent = `${rows.length} of ${allRows.length} DCs`;
-
-  // Row 1: one merged cell per Date/Overall spanning its 3 sub-columns.
-  // Row 2: the Onsited/LT/Productivity sub-labels underneath each merged cell.
-  let head1 = '<th rowspan="2">Origin DC</th>';
-  dates.forEach(dt => { head1 += `<th colspan="3" style="text-align:center">${dt}</th>`; });
-  head1 += '<th colspan="3" style="text-align:center">Overall</th>';
-  document.getElementById('pdcHeadRow1').innerHTML = head1;
-
-  const subColHtml = PDC_SUBCOLS.map(lbl =>
-    `<th style="text-align:center; font-weight:400; opacity:.75; font-size:0.68rem;">${lbl}</th>`
-  ).join('');
-  document.getElementById('pdcHeadRow2').innerHTML = subColHtml.repeat(dates.length + 1);
-
-  const colCount = 1 + dates.length * 3 + 3;
-  const tbody = document.getElementById('pdcBody');
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${colCount}" class="no-data">No matching Origin DC.</td></tr>`;
-  } else {
-    tbody.innerHTML = rows.map(r => {
-      let html = `<tr><td>${r.key}</td>`;
-      dates.forEach(dt => {
-        const c = r[dt] || { Onsited: 0, LT_Trips: 0 };
-        html += `<td class="num">${c.Onsited}</td><td class="num">${c.LT_Trips}</td><td class="num">${fmtProdOnly(c)}</td>`;
-      });
-      html += `<td class="num">${r.total.Onsited}</td><td class="num">${r.total.LT_Trips}</td>` +
-        `<td class="num" style="font-weight:800">${fmtProdOnly(r.total)}</td></tr>`;
-      return html;
+function renderDcList(rs) {
+  const dcs = {};
+  rs.forEach(r => {
+    const d = dcs[r['Origin DC']] = dcs[r['Origin DC']] || { dc: r['Origin DC'], on: 0, lt: 0, v: {} };
+    d.on += r.Onsited; d.lt += r.LT_Trips;
+    if (r.LT_Trips) { const k = vSlot(r.Vendor) ? r.Vendor : 'Other vendors'; d.v[k] = (d.v[k] || 0) + r.LT_Trips; }
+  });
+  let list = Object.values(dcs).filter(d => d.on || d.lt).map(d => ({ ...d, prod: ratio(d.lt, d.on) }));
+  const byProd = dir => (a, b) => (a.prod == null) - (b.prod == null) || dir * ((a.prod ?? 0) - (b.prod ?? 0)) || b.lt - a.lt;
+  list.sort(S.dcSort === 'trips' ? (a, b) => b.lt - a.lt : byProd(S.dcSort === 'high' ? -1 : 1));
+  const shown = S.dcAll ? list : list.slice(0, DC_LIMIT);
+  const MAX = 3;
+  const head = '<div class="dcrow head"><span>DC</span><span>Productivity</span><span>Vendor share of DR trips</span><span style="text-align:right">Trips · trucks</span></div>';
+  $('dcList').innerHTML = head + shown.map(d => {
+    const pos = d.prod == null ? null : Math.min(d.prod, MAX) / MAX * 100;
+    const dotColor = d.prod == null ? '' : d.prod < 0.95 ? 'rgb(var(--neg))' : d.prod > 1.05 ? 'rgb(var(--pos))' : 'var(--muted)';
+    const order = Object.keys(d.v).sort((a, b) => (vSlot(a) || 99) - (vSlot(b) || 99));
+    const segs = order.map(v => {
+      const share = d.v[v] / d.lt;
+      return `<span style="width:${share * 100}%;background:${vColor(v === 'Other vendors' ? '' : v)}" data-tip="<b>${esc(v)}</b><br>${fmt(d.v[v])} trips · ${Math.round(share * 100)}% of ${esc(d.dc)}"></span>`;
     }).join('');
-  }
-
-  let footHtml = '<td>Grand Total</td>';
-  dates.forEach(dt => {
-    const o = rows.reduce((s, r) => s + (r[dt] ? r[dt].Onsited : 0), 0);
-    const t = rows.reduce((s, r) => s + (r[dt] ? r[dt].LT_Trips : 0), 0);
-    footHtml += `<td class="num">${o}</td><td class="num">${t}</td><td class="num">${fmtProdOnly({ Onsited: o, LT_Trips: t })}</td>`;
-  });
-  const go = rows.reduce((s, r) => s + r.total.Onsited, 0);
-  const gt = rows.reduce((s, r) => s + r.total.LT_Trips, 0);
-  footHtml += `<td class="num">${go}</td><td class="num">${gt}</td>` +
-    `<td class="num" style="font-weight:800">${fmtProdOnly({ Onsited: go, LT_Trips: gt })}</td>`;
-  document.getElementById('pdcFootRow').innerHTML = footHtml;
-}
-
-function exportProdByDcDaily() {
-  exportPivotCSV('productivity_by_dc_per_day.csv', 'Origin DC', pdcFilteredRows, pdcDates);
-}
-
-// ── 3. Productivity per Vendor, per Day ───────────────────────────────────────
-function setupProdByVendorDaily() {
-  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
-  const sel = document.getElementById('vendorVehicleFilter');
-  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
-  sel.addEventListener('change', renderProdByVendorDaily);
-}
-
-let pvFilteredRows = [], pvDates = [];
-
-function renderProdByVendorDaily() {
-  const vt = document.getElementById('vendorVehicleFilter').value;
-  const { dates, rows } = pivotByField('Vendor', vt);
-  pvFilteredRows = rows;
-  pvDates = dates;
-
-  const headRow = document.getElementById('pvHeadRow');
-  let headHtml = '<th>Vendor</th>';
-  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
-  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
-  headRow.innerHTML = headHtml;
-
-  const tbody = document.getElementById('pvBody');
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${dates.length + 2}" class="no-data">No data for this vehicle type.</td></tr>`;
-  } else {
-    tbody.innerHTML = rows.map(r => {
-      const c = vendorColor(r.key);
-      let html = `<tr><td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.key}</span></td>`;
-      dates.forEach(dt => { html += `<td class="num">${fmtProdOnly(r[dt])}</td>`; });
-      html += `<td class="num" style="font-weight:800">${fmtProdOnly(r.total)}</td></tr>`;
-      return html;
-    }).join('');
-  }
-
-  document.getElementById('pvFootRow').innerHTML = '<td>All Vendors</td>' + pivotFootRow(rows, dates, fmtProdOnly);
-}
-
-function exportProdByVendorDaily() {
-  exportPivotCSV('productivity_by_vendor_per_day.csv', 'Vendor', pvFilteredRows, pvDates);
-}
-
-// ── VENDOR x DC x DATE DETAIL TABLE ───────────────────────────────────────────
-let pFiltered = [];
-let pSortCol = 'LT_Trips', pSortAsc = false;
-let pPage = 1;
-const P_PAGE_SIZE = 25;
-
-function setupProdDetailTable() {
-  const vendors = [...new Set(RAW.productivity.detail.map(d=>d.Vendor))].sort();
-  const vehicles = [...new Set(RAW.productivity.detail.map(d=>d['Vehicle Type']))].sort();
-
-  const vs = document.getElementById('fpVendor');
-  vendors.forEach(v=>{ let o=document.createElement('option'); o.value=v; o.textContent=v; vs.appendChild(o); });
-
-  const vhs = document.getElementById('fpVehicle');
-  vehicles.forEach(vh=>{ let o=document.createElement('option'); o.value=vh; o.textContent=vh; vhs.appendChild(o); });
-
-  // Populated from the full campaign range - independent of the Date Window
-  // control - so a date outside the current window can still be picked here.
-  const ds = document.getElementById('fpDate');
-  ALL_DATES.forEach(dt=>{ let o=document.createElement('option'); o.value=dt; o.textContent=dt; ds.appendChild(o); });
-
-  document.getElementById('fpVendor').addEventListener('change', applyProdFilters);
-  document.getElementById('fpVehicle').addEventListener('change', applyProdFilters);
-  document.getElementById('fpDate').addEventListener('change', applyProdFilters);
-}
-
-function applyProdFilters() {
-  const v = document.getElementById('fpVendor').value;
-  const vh = document.getElementById('fpVehicle').value;
-  const dt = document.getElementById('fpDate').value;
-  const region = document.getElementById('fpRegion').value;
-  const dc = document.getElementById('fpDc').value;
-  const dset = new Set(DATES);
-
-  pFiltered = RAW.productivity.detail.filter(r =>
-    (dt ? r.Date===dt : dset.has(r.Date)) &&
-    (!v || r.Vendor===v) &&
-    (!vh || r['Vehicle Type']===vh) &&
-    (!dc || r['Origin DC']===dc) &&
-    (!region || RAW.dc_regions[r['Origin DC']]===region)
-  );
-  pPage = 1;
-  pRenderTable();
-}
-
-function resetProdFilters() {
-  document.getElementById('fpVendor').value = '';
-  document.getElementById('fpVehicle').value = '';
-  document.getElementById('fpDate').value = '';
-  document.getElementById('fpRegion').value = '';
-  document.getElementById('fpDc').innerHTML = '<option value="">All DCs</option>' +
-    Object.keys(RAW.dc_regions).sort().map(dc => `<option value="${dc}">${dc}</option>`).join('');
-  document.getElementById('fpDc').value = '';
-  applyProdFilters();
-}
-
-function pSortBy(col) {
-  if (pSortCol === col) { pSortAsc = !pSortAsc; }
-  else { pSortCol = col; pSortAsc = col === 'Vendor' || col === 'Origin DC' || col === 'Date'; }
-
-  document.querySelectorAll('#pDetailTableBody').forEach(()=>{});
-  document.querySelectorAll('[id^="ps-"]').forEach(el => el.textContent='↕');
-  const icon = document.getElementById('ps-'+col);
-  if (icon) icon.textContent = pSortAsc ? '↑' : '↓';
-
-  pFiltered.sort((a,b) => {
-    let av = a[col], bv = b[col];
-    if (av === null || av === undefined) av = -Infinity;
-    if (bv === null || bv === undefined) bv = -Infinity;
-    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
-    return pSortAsc ? (av > bv ? 1:-1) : (av < bv ? 1:-1);
-  });
-  pPage = 1;
-  pRenderTable();
-}
-
-function pRenderTable() {
-  const tbody = document.getElementById('pDetailTableBody');
-  const total = pFiltered.length;
-  const pages = Math.ceil(total / P_PAGE_SIZE);
-  const start = (pPage-1)*P_PAGE_SIZE;
-  const rows = pFiltered.slice(start, start+P_PAGE_SIZE);
-
-  document.getElementById('pResultCount').textContent = `${total} rows`;
-  document.getElementById('pPageInfo').textContent = total === 0
-    ? 'Showing 0 of 0 results'
-    : `Showing ${start + 1}-${start + rows.length} of ${total} results`;
-  document.getElementById('pBtnPrev').disabled = pPage <= 1;
-  document.getElementById('pBtnNext').disabled = pPage >= pages;
-
-  if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="no-data">No data matches your filters.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map(r => {
-    const c = vendorColor(r.Vendor);
-    const prodTxt = r.Productivity === null || r.Productivity === undefined ? '–' : r.Productivity.toFixed(2);
-    return `<tr>
-      <td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.Vendor}</span></td>
-      <td>${r['Origin DC']}</td>
-      <td>${r['Vehicle Type']}</td>
-      <td>${r.Date}</td>
-      <td class="num">${r.Onsited}</td>
-      <td class="num">${r.LT_Trips}</td>
-      <td class="num" style="font-weight:800">${prodTxt}</td>
-      <td class="num"${r.Empty_LT ? ' style="color:#e94560;font-weight:700"' : ''}>${r.Empty_LT || 0}</td>
-      <td class="num">${r.Avg_Work_Hrs === null || r.Avg_Work_Hrs === undefined ? '–' : r.Avg_Work_Hrs.toFixed(1)}</td>
-    </tr>`;
+    return `<div class="dcrow">
+      <div class="dcname" title="${esc(d.dc)}">${esc(d.dc)}<small>${esc(regionOf(d.dc))}</small></div>
+      <div class="prodcell" data-tip="<b>${esc(d.dc)}</b><br>${fmt(d.lt)} trips ÷ ${fmt(d.on)} truck-days = ${f2(d.prod)}">
+        <span class="prodval">${f2(d.prod)}</span>
+        <span class="track"><span class="one" style="left:${100 / MAX}%"></span>${pos == null ? '' : `<span class="dot" style="left:${pos}%;background:${dotColor}"></span>`}</span>
+      </div>
+      <div class="sharebar">${segs || '<span class="muted small" style="background:none">no DR trips</span>'}</div>
+      <div class="dcnums">${fmt(d.lt)} · ${fmt(d.on)}</div>
+    </div>`;
   }).join('');
+  const more = $('dcMore');
+  more.hidden = list.length <= DC_LIMIT;
+  more.textContent = S.dcAll ? 'Show top 15' : `Show all ${list.length} DCs`;
 }
 
-function exportProdDetail() {
-  const headers = ['Vendor', 'Origin DC', 'Vehicle Type', 'Date', 'Daily Onsited', 'Daily LT using DR', 'Productivity',
-    'Finished LT', 'Empty LT', 'Total Work Hrs', 'Avg Work Hrs'];
-  const blank = v => v === null || v === undefined ? '' : v;
-  const rows = pFiltered.map(r => [r.Vendor, r['Origin DC'], r['Vehicle Type'], r.Date, r.Onsited, r.LT_Trips,
-    blank(r.Productivity), r.Finished_LT || 0, r.Empty_LT || 0, blank(r.Work_Hrs), blank(r.Avg_Work_Hrs)]);
-  downloadCSV('vendor_dc_daily_onsited_lt.csv', headers, rows);
+function heatItems(rs, keyOf) {
+  const items = {};
+  rs.forEach(r => {
+    const k = keyOf(r), it = items[k] = items[k] || { key: k, on: 0, lt: 0, d: {} };
+    it.on += r.Onsited; it.lt += r.LT_Trips;
+    const c = it.d[r.Date] = it.d[r.Date] || { on: 0, lt: 0 };
+    c.on += r.Onsited; c.lt += r.LT_Trips;
+  });
+  return Object.values(items).map(it => ({ ...it, prod: ratio(it.lt, it.on) }));
 }
 
-function pChangePage(dir) {
-  pPage += dir;
-  pRenderTable();
-}
-
-// ── EMPTY PICKUP / DELIVERY LEGS BY SOC ──────────────────────────────────────
-let elSocs = [], elLegs = [], elSelected = null, EL_ROWS = [], EL_LEGS = [];
-const EL_LIST_MAX = 500;
-const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const legLabel = r => r.Direction === 'FM → SOC' ? `${r.Hub} → ${r.SOC}` : `${r.SOC} → ${r.Hub}`;
-
-function setupEmptyLtSection() {
-  const E = RAW.empty_lt || { strings: [], rows: [], legs: [] };
-  const S = E.strings;
-  EL_ROWS = E.rows.map(([date, ct, v, soc, d, legs, empty]) =>
-    ({ date, ct: S[ct], vendor: S[v], soc: S[soc], dir: S[d], legs, empty }));
-  EL_LEGS = E.legs.map(([Date, LT, ct, v, vt, d, soc, hub, route, hrs]) => ({
-    Date, LT, 'Cost Type': S[ct], Vendor: S[v], 'Vehicle Type': S[vt], Direction: S[d],
-    SOC: S[soc], Hub: S[hub], Route: S[route], Work_Hrs: hrs,
-  }));
-  const fill = (id, values) => {
-    const sel = document.getElementById(id);
-    values.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+function renderHeat(table, items, sortState, opts) {
+  const ds = dates();
+  const val = (it, key) => key === 'name' ? it.key : key === 'on' ? it.on : key === 'trips' ? it.lt : key === 'prod' ? it.prod : (it.d[key] ? ratio(it.d[key].lt, it.d[key].on) : null);
+  const { key, dir } = sortState;
+  items.sort((a, b) => {
+    const x = val(a, key), y = val(b, key);
+    if (key === 'name') return dir * String(x).localeCompare(String(y));
+    if (x == null || y == null) return (x == null) - (y == null) || b.lt - a.lt;
+    return dir * (x - y) || b.lt - a.lt;
+  });
+  const th = (k, label, cls = 'n', sub = '') => `<th class="${cls}"><button type="button" data-k="${k}"${key === k ? ` data-dir="${dir < 0 ? '↓' : '↑'}"` : ''}>${label}${sub}</button></th>`;
+  const cell = c => {
+    if (!c || (!c.on && !c.lt)) return '<td class="c"></td>';
+    if (!c.on) return `<td class="c muted" data-tip="${fmt(c.lt)} trips, no trucks registered onsite">–</td>`;
+    const p = c.lt / c.on;
+    return `<td class="c" style="background:${shade(p)}" data-tip="${fmt(c.lt)} trips ÷ ${fmt(c.on)} trucks = <b>${f2(p)}</b>">${f2(p)}</td>`;
   };
-  fill('elCostType', [...new Set(EL_ROWS.map(r => r.ct))].sort());
-  fill('elVendor', [...new Set(EL_ROWS.map(r => r.vendor))].sort());
-  fill('elRegion', [...new Set(Object.values(RAW.dc_regions))].sort());
-  ['elCostType', 'elVendor', 'elRegion', 'elDirection'].forEach(id =>
-    document.getElementById(id).addEventListener('change', () => { elSelected = null; renderEmptyLtSection(); }));
-}
-
-function renderEmptyLtSection() {
-  const dset = new Set(DATES);
-  const ct = document.getElementById('elCostType').value;
-  const vendor = document.getElementById('elVendor').value;
-  const region = document.getElementById('elRegion').value;
-  const dir = document.getElementById('elDirection').value;
-  const keep = (date, c, v, soc, d) => dset.has(date) && (!ct || c === ct) && (!vendor || v === vendor) &&
-    (!dir || d === dir) && (!region || (RAW.dc_regions[soc] || 'Unknown') === region);
-
-  elLegs = EL_LEGS.filter(r => keep(r.Date, r['Cost Type'], r.Vendor, r.SOC, r.Direction));
-  const totalEmpty = elLegs.length;
-
-  const map = {};
-  EL_ROWS.forEach(({ date, ct: c, vendor: v, soc, dir: d, legs, empty }) => {
-    if (!keep(date, c, v, soc, d)) return;
-    const k = soc + '|' + d;
-    if (!map[k]) map[k] = { soc, dir: d, legs: 0, empty: 0 };
-    map[k].legs += legs; map[k].empty += empty;
-  });
-  elSocs = Object.values(map).filter(r => r.empty > 0)
-    .sort((a, b) => b.empty - a.empty || b.empty / b.legs - a.empty / a.legs);
-
-  document.getElementById('elSocCount').textContent = `${elSocs.length} SOCs · ${totalEmpty} empty legs`;
-  const body = document.getElementById('elSocBody');
-  body.innerHTML = elSocs.length ? elSocs.map((r, i) => {
-    const sel = elSelected && elSelected.soc === r.soc && elSelected.dir === r.dir;
-    const rate = 100 * r.empty / r.legs;
-    return `<tr data-i="${i}" style="cursor:pointer;${sel ? 'background:#fff1f3;' : ''}">
-      <td><b>${escHtml(r.soc)}</b></td>
-      <td>${escHtml(r.dir)}</td>
-      <td class="num" style="color:#e94560;font-weight:800">${r.empty}</td>
-      <td class="num">${r.legs}</td>
-      <td class="num"${rate >= 10 ? ' style="color:#e94560;font-weight:700"' : ''}>${rate.toFixed(1)}%</td>
-      <td class="num">${totalEmpty ? (100 * r.empty / totalEmpty).toFixed(1) + '%' : '–'}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="6" class="no-data">No empty pickup or delivery legs in this selection.</td></tr>';
-  body.querySelectorAll('tr[data-i]').forEach(tr => tr.addEventListener('click', () => {
-    const r = elSocs[+tr.dataset.i];
-    const same = elSelected && elSelected.soc === r.soc && elSelected.dir === r.dir;
-    selectEmptyLegSoc(same ? null : { soc: r.soc, dir: r.dir });
+  const tot = { on: 0, lt: 0, d: {} };
+  items.forEach(it => { tot.on += it.on; tot.lt += it.lt; ds.forEach(d => { const c = it.d[d]; if (c) { const t = tot.d[d] = tot.d[d] || { on: 0, lt: 0 }; t.on += c.on; t.lt += c.lt; } }); });
+  table.innerHTML = `<thead><tr>${th('name', opts.nameLabel, 'first')}${th('on', 'Trucks')}${th('trips', 'Trips')}${th('prod', 'Productivity')}${ds.map(d => th(d, dShort(d).split(' ')[0], 'c', `<small>${dShort(d).split(' ')[1]}</small>`)).join('')}</tr></thead>
+    <tbody>${items.map(it => `<tr${opts.dim && opts.dim(it) ? ' class="dim"' : ''}>
+      <td class="first">${opts.swatch ? `<span class="sw" style="background:${opts.swatch(it.key)}"></span>` : ''}${it.key ? esc(it.key) : '<span class="muted">No vendor name</span>'}${opts.sub ? `<span class="muted small"> · ${esc(opts.sub(it.key))}</span>` : ''}</td>
+      <td class="n">${fmt(it.on)}</td><td class="n">${fmt(it.lt)}</td>
+      <td class="c prod" style="background:${shade(it.prod)}">${f2(it.prod)}</td>
+      ${ds.map(d => cell(it.d[d])).join('')}</tr>`).join('') || `<tr><td class="first muted" colspan="${4 + ds.length}">Nothing in this selection.</td></tr>`}</tbody>
+    <tfoot><tr><td class="first">All ${opts.plural}</td><td class="n">${fmt(tot.on)}</td><td class="n">${fmt(tot.lt)}</td>
+      <td class="c" style="background:${shade(ratio(tot.lt, tot.on))}">${f2(ratio(tot.lt, tot.on))}</td>${ds.map(d => cell(tot.d[d])).join('')}</tr></tfoot>`;
+  table.querySelectorAll('th button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    if (sortState.key === k) sortState.dir *= -1; else { sortState.key = k; sortState.dir = k === 'name' ? 1 : -1; }
+    opts.rerender();
   }));
-  renderEmptyLegList();
 }
 
-function selectEmptyLegSoc(sel) {
-  elSelected = sel;
-  renderEmptyLtSection();
+function renderDcHeat(rs) {
+  const min = +$('dcMin').value;
+  const items = heatItems(rs, r => r['Origin DC']).filter(it => it.on >= min || (min === 0 && it.lt));
+  renderHeat($('dcHeat'), items, S.dcHeatSort, { nameLabel: 'DC', plural: 'DCs shown', sub: regionOf, rerender: () => renderDcHeat(rows()) });
+}
+function renderVendorHeat(rs) {
+  const items = heatItems(rs, r => r.Vendor).filter(it => it.on || it.lt);
+  renderHeat($('vHeat'), items, S.vHeatSort, { nameLabel: 'Vendor', plural: 'vendors', swatch: vColor, dim: it => it.on < 10, rerender: () => renderVendorHeat(rows()) });
 }
 
-function emptyLegListRows() {
-  return elSelected ? elLegs.filter(r => r.SOC === elSelected.soc && r.Direction === elSelected.dir) : elLegs;
+// ── 03 empty pickups and deliveries ────────────────────────────────────────
+const E = RAW.empty_lt || { strings: [], socs: [], routes: [], totals: [] };
+const decode = arr => arr.map(([d, c, k, di, n, e]) => ({ d, c: E.strings[c], k: E.strings[k], di: E.strings[di], n, e }));
+const EM = { socs: decode(E.socs || []), routes: decode(E.routes || []), totals: decode(E.totals || []) };
+const LIST_LIMIT = 12;
+
+function setupEmpty() {
+  const costs = [...new Set(EM.totals.map(r => r.c))].sort((a, b) => (a === 'In-House' ? -1 : b === 'In-House' ? 1 : a.localeCompare(b)));
+  $('emCostSeg').innerHTML = '<button type="button" data-cost="" aria-pressed="true">All</button>' + costs.map(c => `<button type="button" data-cost="${esc(c)}">${esc(c)}</button>`).join('');
+  $('emCostSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.emCost = b.dataset.cost; pressSeg($('emCostSeg'), 'cost', S.emCost); renderEmpty(); });
+  $('emDirSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.emDir = b.dataset.dir; pressSeg($('emDirSeg'), 'dir', S.emDir); renderEmpty(); });
+  $('socSortSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.socSort = b.dataset.sort; pressSeg($('socSortSeg'), 'sort', S.socSort); renderEmpty(); });
+  $('routeSortSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.routeSort = b.dataset.sort; pressSeg($('routeSortSeg'), 'sort', S.routeSort); renderEmpty(); });
+  $('socMore').addEventListener('click', () => { S.socAll = !S.socAll; renderEmpty(); });
+  $('routeMore').addEventListener('click', () => { S.routeAll = !S.routeAll; renderEmpty(); });
 }
 
-function renderEmptyLegList() {
-  const rows = emptyLegListRows();
-  document.getElementById('elListScope').textContent = elSelected ? `— ${elSelected.soc} (${elSelected.dir})` : '';
-  document.getElementById('elClearSoc').hidden = !elSelected;
-  document.getElementById('elListCount').textContent = rows.length > EL_LIST_MAX
-    ? `${rows.length} legs · showing latest ${EL_LIST_MAX}, Export CSV for all` : `${rows.length} legs`;
-  document.getElementById('elListBody').innerHTML = rows.length ? rows.slice(0, EL_LIST_MAX).map(r => {
-    const c = vendorColor(r.Vendor);
-    return `<tr>
-      <td>${r.Date}</td>
-      <td>${escHtml(r.LT)}</td>
-      <td>${escHtml(r['Cost Type'])}</td>
-      <td><span class="vendor-tag" style="background:${c}22;color:${c}">${escHtml(r.Vendor)}</span></td>
-      <td>${escHtml(r['Vehicle Type'])}</td>
-      <td><b>${escHtml(legLabel(r))}</b></td>
-      <td style="color:#666">${escHtml(r.Route)}</td>
-      <td class="num">${r.Work_Hrs === null ? '–' : r.Work_Hrs.toFixed(1)}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="8" class="no-data">No empty pickup or delivery legs in this selection.</td></tr>';
-}
-
-function exportEmptyLegSocs() {
-  const total = elLegs.length;
-  downloadCSV('empty_legs_by_soc.csv', ['SOC', 'Direction', 'Empty legs', 'All legs', 'Empty rate %', 'Share of all empty legs %'],
-    elSocs.map(r => [r.soc, r.dir, r.empty, r.legs, (100 * r.empty / r.legs).toFixed(1), total ? (100 * r.empty / total).toFixed(1) : '']));
-}
-
-function exportEmptyLegList() {
-  downloadCSV('empty_leg_list.csv', ['Date', 'LT', 'Cost Type', 'Vendor', 'Vehicle Type', 'Direction', 'SOC', 'Hub', 'Route', 'LT Work Hrs'],
-    emptyLegListRows().map(r => [r.Date, r.LT, r['Cost Type'], r.Vendor, r['Vehicle Type'], r.Direction, r.SOC, r.Hub, r.Route, r.Work_Hrs]));
-}
-
-// ── ONSITED DR PER VENDOR PER DC, PER DAY ────────────────────────────────────
-let vdRows = [], vdDates = [];
-
-function setupVendorDcOnsitedTable() {
-  const vehicles = [...new Set(RAW.productivity.detail.map(d => d['Vehicle Type']))].sort();
-  const vSel = document.getElementById('vdVehicleFilter');
-  vehicles.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; vSel.appendChild(o); });
-
-  const vendors = [...new Set(RAW.productivity.detail.map(d => d.Vendor))].sort();
-  const vendSel = document.getElementById('vdVendorFilter');
-  vendors.forEach(v => { let o = document.createElement('option'); o.value = v; o.textContent = v; vendSel.appendChild(o); });
-
-  vSel.addEventListener('change', renderVendorDcOnsitedTable);
-  vendSel.addEventListener('change', renderVendorDcOnsitedTable);
-}
-
-function renderVendorDcOnsitedTable() {
-  const vt = document.getElementById('vdVehicleFilter').value;
-  const vendorFilter = document.getElementById('vdVendorFilter').value;
-  const region = document.getElementById('vdRegion').value;
-  const dcFilter = document.getElementById('vdDc').value;
-  const dates = DATES;
-  const dset = new Set(dates);
-
-  const src = RAW.productivity.detail.filter(r =>
-    dset.has(r.Date) &&
-    (!vt || r['Vehicle Type'] === vt) &&
-    (!vendorFilter || r.Vendor === vendorFilter) &&
-    (!dcFilter || r['Origin DC'] === dcFilter) &&
-    (!region || RAW.dc_regions[r['Origin DC']] === region)
-  );
-
-  const map = {};
-  src.forEach(r => {
-    const key = r.Vendor + '|' + r['Origin DC'];
-    if (!map[key]) map[key] = { Vendor: r.Vendor, 'Origin DC': r['Origin DC'] };
-    map[key][r.Date] = (map[key][r.Date] || 0) + r.Onsited;
+function emptyRollup(list, regionKey) {
+  const ds = new Set(dates()), m = {};
+  list.forEach(r => {
+    if (!ds.has(r.d) || (S.emCost && r.c !== S.emCost) || (S.emDir && r.di !== S.emDir)) return;
+    if (S.region && regionKey(r) !== S.region) return;
+    const id = r.k + '|' + r.di, x = m[id] = m[id] || { k: r.k, di: r.di, n: 0, e: 0 };
+    x.n += r.n; x.e += r.e;
   });
+  return Object.values(m).filter(x => x.e > 0).map(x => ({ ...x, rate: x.e / x.n }));
+}
 
-  let rows = Object.keys(map).map(key => {
-    const row = map[key];
-    let total = 0;
-    dates.forEach(dt => { total += (row[dt] || 0); });
-    row.total = total;
-    return row;
-  }).filter(r => r.total > 0);
+function rankTable(table, list, sort, showAll, more, nameCell, nameHead) {
+  list.sort(sort === 'rate' ? (a, b) => b.rate - a.rate || b.e - a.e : (a, b) => b.e - a.e || b.rate - a.rate);
+  const shown = showAll ? list : list.slice(0, LIST_LIMIT);
+  const maxE = Math.max(1, ...list.map(x => x.e));
+  table.innerHTML = `<thead><tr><th style="padding:8px 4px"></th><th style="padding:8px">${nameHead}</th><th style="padding:8px">Leg</th><th class="n" style="padding:8px">Empty</th><th class="n" style="padding:8px">Rate</th></tr></thead><tbody>` +
+    (shown.map((x, i) => `<tr>
+      <td class="rank">${i + 1}</td>
+      <td>${nameCell(x)}</td>
+      <td><span class="chip">${DIR_LABEL[x.di] || esc(x.di)}</span></td>
+      <td class="n"><div class="barcell" data-tip="${fmt(x.e)} empty of ${fmt(x.n)} ${DIR_LABEL[x.di]?.toLowerCase() || ''} legs"><span class="b" style="width:${Math.max(2, 70 * x.e / maxE)}px"></span><b>${fmt(x.e)}</b></div></td>
+      <td class="n${x.rate >= .2 ? ' rate-hi' : ''}" data-tip="${fmt(x.e)} of ${fmt(x.n)} legs">${(x.rate * 100).toFixed(1)}%<div class="muted small">of ${fmt(x.n)}</div></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:14px 8px">No empty legs in this selection.</td></tr>') + '</tbody>';
+  more.hidden = list.length <= LIST_LIMIT;
+  more.textContent = showAll ? `Show top ${LIST_LIMIT}` : `Show all ${list.length}`;
+}
 
-  rows.sort((a, b) => b.total - a.total);
-  vdRows = rows;
-  vdDates = dates;
+function routeHtml(route) {
+  const [home, rest] = String(route).split(' > ');
+  const stops = rest ? rest.split(' - ') : [];
+  return `<div class="route"><b>${esc(home)}</b>${stops.map(s => `<span class="arrow">→</span>${esc(s)}`).join('')}</div>`;
+}
 
-  document.getElementById('vdResultCount').textContent = `${rows.length} rows`;
+function renderEmpty() {
+  const ds = new Set(dates());
+  const t = { n: 0, e: 0, pn: 0, pe: 0, dn: 0, de: 0 };
+  EM.totals.forEach(r => {
+    if (!ds.has(r.d) || (S.emCost && r.c !== S.emCost) || (S.region && r.k !== S.region)) return;
+    if (r.di === 'FM → SOC') { t.pn += r.n; t.pe += r.e; } else { t.dn += r.n; t.de += r.e; }
+  });
+  const showP = S.emDir !== 'SOC → LM', showD = S.emDir !== 'FM → SOC';
+  t.n = (showP ? t.pn : 0) + (showD ? t.dn : 0); t.e = (showP ? t.pe : 0) + (showD ? t.de : 0);
+  tiles($('emTiles'), [
+    { k: 'Empty legs', v: fmt(t.e), s: `of ${fmt(t.n)} pickup and delivery legs`, hero: true },
+    { k: 'Empty rate', v: t.n ? f1(pct(t.e, t.n)) + '%' : '–', s: 'share of legs that ran empty' },
+    { k: 'Empty pickups', v: showP ? fmt(t.pe) : '–', s: showP && t.pn ? `${f1(pct(t.pe, t.pn))}% of ${fmt(t.pn)} FM → SOC legs` : 'not selected' },
+    { k: 'Empty deliveries', v: showD ? fmt(t.de) : '–', s: showD && t.dn ? `${f1(pct(t.de, t.dn))}% of ${fmt(t.dn)} SOC → LM runs` : 'not selected' },
+  ]);
+  const socs = emptyRollup(EM.socs, r => regionOf(r.k));
+  rankTable($('socTable'), socs, S.socSort, S.socAll, $('socMore'),
+    x => `<b>${esc(x.k)}</b><div class="muted small">${esc(regionOf(x.k))}</div>`, 'SOC');
+  const routes = emptyRollup(EM.routes, r => regionOf(String(r.k).split(' > ')[0]));
+  rankTable($('routeTable'), routes, S.routeSort, S.routeAll, $('routeMore'), x => routeHtml(x.k), 'Route');
+}
 
-  const headRow = document.getElementById('vdHeadRow');
-  let headHtml = '<th>Vendor</th><th>Origin DC</th>';
-  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
-  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
-  headRow.innerHTML = headHtml;
+// ── wiring ─────────────────────────────────────────────────────────────────
+function render() {
+  syncPreset();
+  const rs = rows();
+  renderTiles(rs);
+  renderTrend(rs);
+  renderVendorLegend(rs);
+  renderDcList(rs);
+  renderDcHeat(rs);
+  renderVendorHeat(rs);
+  renderEmpty();
+}
 
-  const tbody = document.getElementById('vdBody');
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${dates.length + 3}" class="no-data">No data matches your filters.</td></tr>`;
-  } else {
-    tbody.innerHTML = rows.map(r => {
-      const c = vendorColor(r.Vendor);
-      let html = `<tr><td><span class="vendor-tag" style="background:${c}22;color:${c}">${r.Vendor}</span></td><td>${r['Origin DC']}</td>`;
-      dates.forEach(dt => { html += `<td class="num">${r[dt] ? r[dt] : '–'}</td>`; });
-      html += `<td class="num" style="font-weight:800">${r.total}</td></tr>`;
-      return html;
-    }).join('');
+document.addEventListener('DOMContentLoaded', () => {
+  $('updatedAt').textContent = new Date(RAW.generated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  $('dataSpan').textContent = `Data ${dShort(ALL_DATES[0])} – ${dShort(ALL_DATES[ALL_DATES.length - 1])}`;
+  if (RAW.errors && RAW.errors.length) {
+    $('errors').innerHTML = '<div class="banner"><b>Some data is missing.</b> ' + RAW.errors.map(e => `${esc(e.source)}: ${esc(e.message)}`).join(' ') + '</div>';
   }
-
-  let footHtml = '<td>Grand Total</td><td></td>';
-  dates.forEach(dt => {
-    const sum = rows.reduce((s, r) => s + (r[dt] || 0), 0);
-    footHtml += `<td class="num">${sum}</td>`;
-  });
-  const grand = rows.reduce((s, r) => s + r.total, 0);
-  footHtml += `<td class="num">${grand}</td>`;
-  document.getElementById('vdFootRow').innerHTML = footHtml;
-}
-
-function exportVendorDcOnsited() {
-  const headers = ['Vendor', 'Origin DC', ...vdDates, 'Campaign-to-date'];
-  const rows = vdRows.map(r => [r.Vendor, r['Origin DC'], ...vdDates.map(dt => r[dt] || 0), r.total]);
-  downloadCSV('onsited_dr_per_vendor_per_dc_per_day.csv', headers, rows);
-}
-
-// ── ORDERED vs ONSITED DR TABLE, PER DAY ─────────────────────────────────────
-function ovoFmtCell(c) {
-  if (!c || (c.Ordered === 0 && c.Onsited === 0)) return '–';
-  return `${c.Ordered || 0} / <b>${c.Onsited || 0}</b>`;
-}
-
-function setupOrderedVsOnsiteTable() {
-}
-
-let ovoFilteredRows = [], ovoDates = [];
-
-function ovoRenderTable() {
-  const dates = DATES;
-  const region = document.getElementById('ovoRegion').value;
-  const dcFilter = document.getElementById('ovoDc').value;
-
-  // Campaign totals for the "Ordered" side come from the static booking total
-  // (not summed across days, since a multi-day contract would otherwise be double-counted)
-  const campaignOrdered = {};
-  RAW.ordered_vs_onsite.forEach(r => { campaignOrdered[r['Origin DC'] + '|' + r['Vehicle Type']] = r.Ordered; });
-
-  // Only keys with at least one Date inside the current Date Window get a row -
-  // otherwise a DC/Vehicle Type combo whose activity is entirely outside the
-  // selected sub-range would still show up as an all-dash row (it exists
-  // somewhere in the full campaign, just not in this window).
-  const dset = new Set(dates);
-  const map = {};
-  RAW.ordered_vs_onsite_daily.rows.forEach(r => {
-    if (!dset.has(r.Date)) return;
-    const key = r['Origin DC'] + '|' + r['Vehicle Type'];
-    if (!map[key]) map[key] = { dc: r['Origin DC'], vt: r['Vehicle Type'] };
-    map[key][r.Date] = { Ordered: r.Ordered, Onsited: r.Onsited };
-  });
-
-  let rows = Object.keys(map).map(key => {
-    const row = map[key];
-    let totOnsited = 0;
-    dates.forEach(dt => { totOnsited += (row[dt] ? row[dt].Onsited : 0); });
-    row.total = { Ordered: campaignOrdered[key] || 0, Onsited: totOnsited };
-    return row;
-  });
-  rows = rows.filter(r => (!dcFilter || r.dc===dcFilter) && (!region || RAW.dc_regions[r.dc]===region));
-  rows.sort((a, b) => b.total.Onsited - a.total.Onsited);
-  ovoFilteredRows = rows;
-  ovoDates = dates;
-
-  document.getElementById('ovoResultCount').textContent = `${rows.length} of ${Object.keys(map).length} rows`;
-
-  const headRow = document.getElementById('ovoHeadRow');
-  let headHtml = '<th>Origin DC</th><th>Vehicle Type</th>';
-  dates.forEach(dt => { headHtml += `<th style="text-align:center">${dt}</th>`; });
-  headHtml += '<th style="text-align:center">Campaign-to-date</th>';
-  headRow.innerHTML = headHtml;
-
-  const tbody = document.getElementById('ovoBody');
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${dates.length + 3}" class="no-data">No matching Origin DC.</td></tr>`;
-  } else {
-    tbody.innerHTML = rows.map(r => {
-      let html = `<tr><td>${r.dc}</td><td>${r.vt}</td>`;
-      dates.forEach(dt => { html += `<td class="num">${ovoFmtCell(r[dt])}</td>`; });
-      html += `<td class="num" style="font-weight:800">${ovoFmtCell(r.total)}</td></tr>`;
-      return html;
-    }).join('');
-  }
-
-  let footHtml = '<td>Grand Total</td><td></td>';
-  dates.forEach(dt => {
-    const o = rows.reduce((s, r) => s + (r[dt] ? r[dt].Ordered : 0), 0);
-    const s2 = rows.reduce((s, r) => s + (r[dt] ? r[dt].Onsited : 0), 0);
-    footHtml += `<td class="num">${ovoFmtCell({ Ordered: o, Onsited: s2 })}</td>`;
-  });
-  const totO = rows.reduce((s, r) => s + r.total.Ordered, 0);
-  const totS = rows.reduce((s, r) => s + r.total.Onsited, 0);
-  footHtml += `<td class="num">${ovoFmtCell({ Ordered: totO, Onsited: totS })}</td>`;
-  document.getElementById('ovoFootRow').innerHTML = footHtml;
-}
-
-function exportOrderedVsOnsite() {
-  const headers = ['Origin DC', 'Vehicle Type'];
-  ovoDates.forEach(dt => headers.push(dt + ' Ordered', dt + ' Onsited'));
-  headers.push('Campaign Ordered', 'Campaign Onsited (vehicle-days)');
-  const rows = ovoFilteredRows.map(r => {
-    const row = [r.dc, r.vt];
-    ovoDates.forEach(dt => { const c = r[dt] || { Ordered: 0, Onsited: 0 }; row.push(c.Ordered, c.Onsited); });
-    row.push(r.total.Ordered, r.total.Onsited);
-    return row;
-  });
-  downloadCSV('ordered_vs_onsited_per_day.csv', headers, rows);
-}
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  scaleLegend($('scaleA')); scaleLegend($('scaleB'));
+  setupFilters();
+  setupEmpty();
+  $('grainSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.grain = b.dataset.grain; pressSeg($('grainSeg'), 'grain', S.grain); renderTrend(rows()); });
+  $('dcSortSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.dcSort = b.dataset.sort; pressSeg($('dcSortSeg'), 'sort', S.dcSort); renderDcList(rows()); });
+  $('dcMore').addEventListener('click', () => { S.dcAll = !S.dcAll; renderDcList(rows()); });
+  $('dcMin').addEventListener('change', () => renderDcHeat(rows()));
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderTrend(rows()));
+  new MutationObserver(() => renderTrend(rows())).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  render();
+});
 </script>
 </body>
 </html>

@@ -82,6 +82,9 @@ select, input[type=date] {
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600; }
 .seg button:focus-visible, .linkbtn:focus-visible, th button:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
 .range-note { font-size: 12px; color: var(--muted); margin-left: auto; }
+.toggle { font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; gap: 7px; }
+.toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+.toggle:has(input:checked) { color: var(--ink); font-weight: 600; }
 
 .banner { margin-top: 16px; border: 1px solid rgba(var(--neg), .4); background: rgba(var(--neg), .08); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
 
@@ -176,8 +179,6 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--axis); border-bottom: 0
 .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
 .split > .card + .card { margin-top: 0; }
 .chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
-.barcell { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-.barcell .b { height: 8px; border-radius: 0 4px 4px 0; background: rgb(var(--neg)); }
 .route { line-height: 1.35; }
 .route b { font-weight: 600; }
 .route .arrow { color: var(--muted); margin: 0 3px; }
@@ -245,6 +246,10 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
       <label class="flabel" for="fVehicle">Vehicle</label>
       <select id="fVehicle"><option value="">All vehicle types</option></select>
     </div>
+    <label class="fgroup toggle" id="esbToggle">
+      <input type="checkbox" id="fNoEsb">
+      <span>Exclude ESB DCs</span>
+    </label>
     <span class="range-note" id="rangeNote"></span>
   </div>
 </nav>
@@ -491,9 +496,15 @@ const S = {
   dcHeatSort: { key: 'prod', dir: -1 }, vHeatSort: { key: 'trips', dir: -1 },
   emCost: '', emDir: '', socSort: 'empty', routeSort: 'empty', socAll: false, routeAll: false,
   emPick: null,  // { type: 'soc' | 'route', k, di } - narrows the CSV download
+  noEsb: false,
 };
+const ESB = new Set(RAW.esb_dcs || []);
+const esbOut = dc => S.noEsb && ESB.has(dc);
+// A route is out when any station on it is an ESB DC.
+const routeStations = route => String(route).split(' > ').flatMap(p => p.split(' - '));
+const esbRouteOut = route => S.noEsb && routeStations(route).some(s => ESB.has(s));
 const dates = () => ALL_DATES.filter(d => d >= S.from && d <= S.to);
-const inScope = r => (!S.region || regionOf(r['Origin DC']) === S.region) && (!S.vehicle || r['Vehicle Type'] === S.vehicle);
+const inScope = r => (!S.region || regionOf(r['Origin DC']) === S.region) && (!S.vehicle || r['Vehicle Type'] === S.vehicle) && !esbOut(r['Origin DC']);
 function rows() { const ds = new Set(dates()); return P.detail.filter(r => ds.has(r.Date) && inScope(r)); }
 
 function pressSeg(seg, attr, value) {
@@ -521,6 +532,8 @@ function setupFilters() {
   [...new Set(P.detail.map(r => r['Vehicle Type']))].sort().forEach(v => $('fVehicle').add(new Option(v, v)));
   $('fRegion').addEventListener('change', e => { S.region = e.target.value; render(); });
   $('fVehicle').addEventListener('change', e => { S.vehicle = e.target.value; render(); });
+  $('fNoEsb').addEventListener('change', e => { S.noEsb = e.target.checked; render(); });
+  $('esbToggle').dataset.tip = '<b>ESB (Eco Super Bulky) DCs</b><br>' + [...ESB].map(esc).join('<br>');
 }
 function syncPreset() {
   const n = dates().length, last = S.to === ALL_DATES[ALL_DATES.length - 1];
@@ -633,7 +646,7 @@ function renderProdChart(rs, ser) {
   const keys = ser.map(s => s.key), labels = ser.map(s => s.label);
   const ink = css('--ink'), s1 = css('--s1'), s2 = css('--s2'), other = css('--other'), grid = css('--grid'), surface = css('--surface');
   const ds = new Set(dates());
-  const nationRows = P.detail.filter(r => ds.has(r.Date) && (!S.vehicle || r['Vehicle Type'] === S.vehicle));
+  const nationRows = P.detail.filter(r => ds.has(r.Date) && (!S.vehicle || r['Vehicle Type'] === S.vehicle) && !esbOut(r['Origin DC']));
   const lines = [{ label: 'Nationwide', role: 'nation', color: ink, width: 2.5, data: prodLine(nationRows, keys), endLabel: 'Nationwide' }];
   if (!S.region) {
     REGION_ORDER.forEach(rg => lines.push({ label: rg, role: 'region', color: rColor(rg), width: 1.75,
@@ -833,7 +846,10 @@ function renderVendorHeat(rs) {
 // ── 03 empty pickups and deliveries ────────────────────────────────────────
 const E = RAW.empty_lt || { strings: [], socs: [], routes: [], totals: [] };
 const decode = arr => arr.map(([d, c, k, di, n, e]) => ({ d, c: E.strings[c], k: E.strings[k], di: E.strings[di], n, e }));
-const EM = { socs: decode(E.socs || []), routes: decode(E.routes || []), totals: decode(E.totals || []) };
+const EM = {
+  socs: decode(E.socs || []), routes: decode(E.routes || []),
+  totals: (E.totals || []).map(([d, c, k, di, esb, n, e]) => ({ d, c: E.strings[c], k: E.strings[k], di: E.strings[di], esb: !!esb, n, e })),
+};
 const EM_DETAIL = (E.detail || []).map(([d, lt, c, v, vt, di, soc, hub, route, std, atd, ata]) => {
   const st = i => E.strings[i];
   return { d, lt, c: st(c), v: st(v), vt: st(vt), di: st(di), soc: st(soc), hub: st(hub), route: st(route), std, atd, ata };
@@ -853,11 +869,11 @@ function setupEmpty() {
   $('routeMore').addEventListener('click', () => { S.routeAll = !S.routeAll; renderEmpty(); });
 }
 
-function emptyRollup(list, regionKey) {
+function emptyRollup(list, regionKey, isOut) {
   const ds = new Set(dates()), m = {};
   list.forEach(r => {
     if (!ds.has(r.d) || (S.emCost && r.c !== S.emCost) || (S.emDir && r.di !== S.emDir)) return;
-    if (S.region && regionKey(r) !== S.region) return;
+    if ((S.region && regionKey(r) !== S.region) || isOut(r.k)) return;
     const id = r.k + '|' + r.di, x = m[id] = m[id] || { k: r.k, di: r.di, n: 0, e: 0 };
     x.n += r.n; x.e += r.e;
   });
@@ -867,14 +883,13 @@ function emptyRollup(list, regionKey) {
 function rankTable(table, list, sort, showAll, more, nameCell, nameHead, type) {
   list.sort(sort === 'rate' ? (a, b) => b.rate - a.rate || b.e - a.e : (a, b) => b.e - a.e || b.rate - a.rate);
   const shown = showAll ? list : list.slice(0, LIST_LIMIT);
-  const maxE = Math.max(1, ...list.map(x => x.e));
   const isSel = x => S.emPick && S.emPick.type === type && S.emPick.k === x.k && S.emPick.di === x.di;
   table.innerHTML = `<thead><tr><th style="padding:8px 4px"></th><th style="padding:8px">${nameHead}</th><th style="padding:8px">Leg</th><th class="n" style="padding:8px">Empty</th><th class="n" style="padding:8px">Rate</th></tr></thead><tbody>` +
     (shown.map((x, i) => `<tr data-i="${i}" tabindex="0" aria-selected="${isSel(x)}"${isSel(x) ? ' class="sel"' : ''}>
       <td class="rank">${i + 1}</td>
       <td>${nameCell(x)}</td>
       <td><span class="chip">${DIR_LABEL[x.di] || esc(x.di)}</span></td>
-      <td class="n"><div class="barcell" data-tip="${fmt(x.e)} empty of ${fmt(x.n)} ${DIR_LABEL[x.di]?.toLowerCase() || ''} legs"><span class="b" style="width:${Math.max(2, 70 * x.e / maxE)}px"></span><b>${fmt(x.e)}</b></div></td>
+      <td class="n"><b data-tip="${fmt(x.e)} empty of ${fmt(x.n)} ${DIR_LABEL[x.di]?.toLowerCase() || ''} legs">${fmt(x.e)}</b></td>
       <td class="n${x.rate >= .2 ? ' rate-hi' : ''}" data-tip="${fmt(x.e)} of ${fmt(x.n)} legs">${(x.rate * 100).toFixed(1)}%<div class="muted small">of ${fmt(x.n)}</div></td>
     </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:14px 8px">No empty legs in this selection.</td></tr>') + '</tbody>';
   table.querySelectorAll('tbody tr[data-i]').forEach(tr => {
@@ -896,7 +911,7 @@ function renderEmpty() {
   const ds = new Set(dates());
   const t = { n: 0, e: 0, pn: 0, pe: 0, dn: 0, de: 0 };
   EM.totals.forEach(r => {
-    if (!ds.has(r.d) || (S.emCost && r.c !== S.emCost) || (S.region && r.k !== S.region)) return;
+    if (!ds.has(r.d) || (S.emCost && r.c !== S.emCost) || (S.region && r.k !== S.region) || (S.noEsb && r.esb)) return;
     if (r.di === 'FM → SOC') { t.pn += r.n; t.pe += r.e; } else { t.dn += r.n; t.de += r.e; }
   });
   const showP = S.emDir !== 'SOC → LM', showD = S.emDir !== 'FM → SOC';
@@ -907,8 +922,8 @@ function renderEmpty() {
     { k: 'Empty pickups', v: showP ? fmt(t.pe) : '–', s: showP && t.pn ? `${f1(pct(t.pe, t.pn))}% of ${fmt(t.pn)} FM → SOC legs` : 'not selected' },
     { k: 'Empty deliveries', v: showD ? fmt(t.de) : '–', s: showD && t.dn ? `${f1(pct(t.de, t.dn))}% of ${fmt(t.dn)} SOC → LM runs` : 'not selected' },
   ]);
-  const socs = emptyRollup(EM.socs, r => regionOf(r.k));
-  const routes = emptyRollup(EM.routes, r => regionOf(String(r.k).split(' > ')[0]));
+  const socs = emptyRollup(EM.socs, r => regionOf(r.k), esbOut);
+  const routes = emptyRollup(EM.routes, r => regionOf(String(r.k).split(' > ')[0]), esbRouteOut);
   const p = S.emPick;
   if (p && !(p.type === 'soc' ? socs : routes).some(x => x.k === p.k && x.di === p.di)) S.emPick = null;
   rankTable($('socTable'), socs, S.socSort, S.socAll, $('socMore'),
@@ -927,7 +942,7 @@ function renderEmpty() {
 function emptyDetail() {
   const ds = new Set(dates()), q = S.emPick;
   return EM_DETAIL.filter(r => ds.has(r.d) && (!S.emCost || r.c === S.emCost) && (!S.emDir || r.di === S.emDir) &&
-    (!S.region || regionOf(r.soc) === S.region) &&
+    (!S.region || regionOf(r.soc) === S.region) && !esbOut(r.soc) && !esbRouteOut(r.route) &&
     (!q || (q.di === r.di && (q.type === 'soc' ? r.soc === q.k : r.route === q.k))));
 }
 

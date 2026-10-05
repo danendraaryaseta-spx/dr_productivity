@@ -100,9 +100,19 @@ def read_tracker(gc, sheet_id, source_label):
     return rows
 
 
+# ESB (Eco Super Bulky) SOCs run on units borrowed from regular DCs, so planners need to be able
+# to take them out of the numbers. List from the planning team; two are named "EDC".
+ESB_DCS = ['Banyumas 2 DC', 'Cakung 5 DC', 'Cirebon 2 DC', 'Jember 2 EDC', 'Madiun 3 DC',
+           'Semarang 4 DC', 'Sidoarjo 2 DC', 'Tegal 3 EDC']
+
+
+def is_dc(name):
+    return str(name).strip().endswith((' DC', ' RDC', ' EDC'))
+
+
 def station_kind(name):
     s = str(name).strip()
-    if s.endswith(' DC') or s.endswith(' RDC'):
+    if is_dc(s):
         return 'SOC'
     if 'first mile' in s.lower():
         return 'FM'
@@ -192,7 +202,7 @@ def build_trips_first_leg(gc):
     # Every departed LT, any cost type or starting station - the empty-leg section covers
     # FM pickup routes that start at a hub too.
     all_lts = first_leg.join(lt_stats, on='trip_number')
-    first_leg = all_lts[all_lts['origin_station'].astype(str).str.endswith(' DC')]
+    first_leg = all_lts[all_lts['origin_station'].map(is_dc)]
 
     # No fixed rolling window - the full date range actually present in the
     # trackers is exposed to the client, which lets the user pick any sub-range
@@ -391,8 +401,10 @@ def build_empty_lt(all_lts, rel_legs, dc_regions):
     pack = lambda g: [[d, ix(c), ix(k), ix(di), int(n), int(e)] for d, c, k, di, n, e in g.itertuples(index=False)]
     socs, routes = pack(rollup('SOC')), pack(rollup('trip_route'))
     legs['Region'] = legs['SOC'].map(dc_regions).fillna('Unknown')
-    totals = pack(legs.groupby(['Date', 'cost_type', 'Region', 'Direction']).agg(
-        Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index())
+    legs['ESB'] = legs['SOC'].isin(ESB_DCS)
+    totals = [[d, ix(c), ix(rg), ix(di), int(esb), int(n), int(e)] for d, c, rg, di, esb, n, e in
+              legs.groupby(['Date', 'cost_type', 'Region', 'Direction', 'ESB']).agg(
+                  Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index().itertuples(index=False)]
     # One row per empty leg, for the planners' CSV download.
     empty = legs[legs['Empty']].fillna('').sort_values(['Date', 'SOC', 'trip_std'], ascending=[False, True, True])
     detail = [[r['Date'], r['trip_number'], ix(r['cost_type']), ix(r['agency_name']), ix(r['vehicle_type_name']),
@@ -404,7 +416,7 @@ def build_empty_lt(all_lts, rel_legs, dc_regions):
         'strings': list(pool),
         'socs': socs,      # Date, Cost Type*, SOC*, Direction*, Legs, Empty   (* = index into strings)
         'routes': routes,  # Date, Cost Type*, Route*, Direction*, Legs, Empty
-        'totals': totals,  # Date, Cost Type*, Region*, Direction*, Legs, Empty  - every leg, for headline rates
+        'totals': totals,  # Date, Cost Type*, Region*, Direction*, SOC is ESB (0/1), Legs, Empty - every leg
         # Date, LT, Cost Type*, Vendor*, Vehicle Type*, Direction*, SOC*, Hub*, Route*, Leg STD, Leg ATD, Leg arrival
         'detail': detail,
     }
@@ -431,6 +443,7 @@ def main():
     raw['productivity'] = productivity
     raw['empty_lt'] = empty_lt
     raw['dc_regions'] = dc_regions
+    raw['esb_dcs'] = ESB_DCS
     raw['generated_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     errors = []

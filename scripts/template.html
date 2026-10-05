@@ -172,6 +172,13 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--axis); border-bottom: 0
 .route b { font-weight: 600; }
 .route .arrow { color: var(--muted); margin: 0 3px; }
 .rank { color: var(--muted); font-variant-numeric: tabular-nums; width: 24px; }
+.dlbar { display: flex; justify-content: space-between; align-items: center; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; }
+.dl { font: inherit; font-size: 13px; font-weight: 600; color: var(--surface); background: var(--ink); border: 0; border-radius: 7px; padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+.dl:disabled { opacity: .4; cursor: default; }
+.dl:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.pick tbody tr[data-i] { cursor: pointer; }
+.pick tbody tr.sel td { background: rgba(var(--neg), .10); }
+.pick tbody tr.sel td:first-child { box-shadow: inset 3px 0 0 rgb(var(--neg)); }
 .rate-hi { font-weight: 700; }
 
 /* tooltip */
@@ -357,6 +364,17 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
 
     <div class="tiles" id="emTiles" style="grid-template-columns:repeat(4,minmax(0,1fr))"></div>
 
+    <div class="dlbar">
+      <div>
+        <div id="emPickNote"><b>All SOCs and routes</b> in the current filters</div>
+        <div class="muted small">Click a SOC or route below to download only its legs. One row per empty leg, with LT number, vendor and leg times, for checking in the trackers.</div>
+      </div>
+      <div class="controls">
+        <button type="button" class="linkbtn" id="emPickClear" hidden style="padding:0">Clear selection</button>
+        <button type="button" class="dl" id="emDownload">Download CSV</button>
+      </div>
+    </div>
+
     <div class="split">
       <div class="card">
         <div class="card-head">
@@ -366,7 +384,7 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
             <button type="button" data-sort="rate">Rate</button>
           </div>
         </div>
-        <div class="tscroll"><table id="socTable"></table></div>
+        <div class="tscroll"><table id="socTable" class="pick"></table></div>
         <button type="button" class="linkbtn" id="socMore"></button>
       </div>
       <div class="card">
@@ -377,7 +395,7 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
             <button type="button" data-sort="rate">Rate</button>
           </div>
         </div>
-        <div class="tscroll"><table id="routeTable"></table></div>
+        <div class="tscroll"><table id="routeTable" class="pick"></table></div>
         <button type="button" class="linkbtn" id="routeMore"></button>
       </div>
     </div>
@@ -460,6 +478,7 @@ const S = {
   grain: 'day', dcSort: 'trips', dcAll: false,
   dcHeatSort: { key: 'prod', dir: -1 }, vHeatSort: { key: 'trips', dir: -1 },
   emCost: '', emDir: '', socSort: 'empty', routeSort: 'empty', socAll: false, routeAll: false,
+  emPick: null,  // { type: 'soc' | 'route', k, di } - narrows the CSV download
 };
 const dates = () => ALL_DATES.filter(d => d >= S.from && d <= S.to);
 const inScope = r => (!S.region || regionOf(r['Origin DC']) === S.region) && (!S.vehicle || r['Vehicle Type'] === S.vehicle);
@@ -722,6 +741,10 @@ function renderVendorHeat(rs) {
 const E = RAW.empty_lt || { strings: [], socs: [], routes: [], totals: [] };
 const decode = arr => arr.map(([d, c, k, di, n, e]) => ({ d, c: E.strings[c], k: E.strings[k], di: E.strings[di], n, e }));
 const EM = { socs: decode(E.socs || []), routes: decode(E.routes || []), totals: decode(E.totals || []) };
+const EM_DETAIL = (E.detail || []).map(([d, lt, c, v, vt, di, soc, hub, route, std, atd, ata]) => {
+  const st = i => E.strings[i];
+  return { d, lt, c: st(c), v: st(v), vt: st(vt), di: st(di), soc: st(soc), hub: st(hub), route: st(route), std, atd, ata };
+});
 const LIST_LIMIT = 12;
 
 function setupEmpty() {
@@ -729,6 +752,8 @@ function setupEmpty() {
   $('emCostSeg').innerHTML = '<button type="button" data-cost="" aria-pressed="true">All</button>' + costs.map(c => `<button type="button" data-cost="${esc(c)}">${esc(c)}</button>`).join('');
   $('emCostSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.emCost = b.dataset.cost; pressSeg($('emCostSeg'), 'cost', S.emCost); renderEmpty(); });
   $('emDirSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.emDir = b.dataset.dir; pressSeg($('emDirSeg'), 'dir', S.emDir); renderEmpty(); });
+  $('emPickClear').addEventListener('click', () => { S.emPick = null; renderEmpty(); });
+  $('emDownload').addEventListener('click', downloadEmptyLegs);
   $('socSortSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.socSort = b.dataset.sort; pressSeg($('socSortSeg'), 'sort', S.socSort); renderEmpty(); });
   $('routeSortSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.routeSort = b.dataset.sort; pressSeg($('routeSortSeg'), 'sort', S.routeSort); renderEmpty(); });
   $('socMore').addEventListener('click', () => { S.socAll = !S.socAll; renderEmpty(); });
@@ -746,18 +771,24 @@ function emptyRollup(list, regionKey) {
   return Object.values(m).filter(x => x.e > 0).map(x => ({ ...x, rate: x.e / x.n }));
 }
 
-function rankTable(table, list, sort, showAll, more, nameCell, nameHead) {
+function rankTable(table, list, sort, showAll, more, nameCell, nameHead, type) {
   list.sort(sort === 'rate' ? (a, b) => b.rate - a.rate || b.e - a.e : (a, b) => b.e - a.e || b.rate - a.rate);
   const shown = showAll ? list : list.slice(0, LIST_LIMIT);
   const maxE = Math.max(1, ...list.map(x => x.e));
+  const isSel = x => S.emPick && S.emPick.type === type && S.emPick.k === x.k && S.emPick.di === x.di;
   table.innerHTML = `<thead><tr><th style="padding:8px 4px"></th><th style="padding:8px">${nameHead}</th><th style="padding:8px">Leg</th><th class="n" style="padding:8px">Empty</th><th class="n" style="padding:8px">Rate</th></tr></thead><tbody>` +
-    (shown.map((x, i) => `<tr>
+    (shown.map((x, i) => `<tr data-i="${i}" tabindex="0" aria-selected="${isSel(x)}"${isSel(x) ? ' class="sel"' : ''}>
       <td class="rank">${i + 1}</td>
       <td>${nameCell(x)}</td>
       <td><span class="chip">${DIR_LABEL[x.di] || esc(x.di)}</span></td>
       <td class="n"><div class="barcell" data-tip="${fmt(x.e)} empty of ${fmt(x.n)} ${DIR_LABEL[x.di]?.toLowerCase() || ''} legs"><span class="b" style="width:${Math.max(2, 70 * x.e / maxE)}px"></span><b>${fmt(x.e)}</b></div></td>
       <td class="n${x.rate >= .2 ? ' rate-hi' : ''}" data-tip="${fmt(x.e)} of ${fmt(x.n)} legs">${(x.rate * 100).toFixed(1)}%<div class="muted small">of ${fmt(x.n)}</div></td>
     </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:14px 8px">No empty legs in this selection.</td></tr>') + '</tbody>';
+  table.querySelectorAll('tbody tr[data-i]').forEach(tr => {
+    const pick = () => { const x = shown[+tr.dataset.i]; S.emPick = isSel(x) ? null : { type, k: x.k, di: x.di }; renderEmpty(); };
+    tr.addEventListener('click', pick);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+  });
   more.hidden = list.length <= LIST_LIMIT;
   more.textContent = showAll ? `Show top ${LIST_LIMIT}` : `Show all ${list.length}`;
 }
@@ -784,10 +815,43 @@ function renderEmpty() {
     { k: 'Empty deliveries', v: showD ? fmt(t.de) : '–', s: showD && t.dn ? `${f1(pct(t.de, t.dn))}% of ${fmt(t.dn)} SOC → LM runs` : 'not selected' },
   ]);
   const socs = emptyRollup(EM.socs, r => regionOf(r.k));
-  rankTable($('socTable'), socs, S.socSort, S.socAll, $('socMore'),
-    x => `<b>${esc(x.k)}</b><div class="muted small">${esc(regionOf(x.k))}</div>`, 'SOC');
   const routes = emptyRollup(EM.routes, r => regionOf(String(r.k).split(' > ')[0]));
-  rankTable($('routeTable'), routes, S.routeSort, S.routeAll, $('routeMore'), x => routeHtml(x.k), 'Route');
+  const p = S.emPick;
+  if (p && !(p.type === 'soc' ? socs : routes).some(x => x.k === p.k && x.di === p.di)) S.emPick = null;
+  rankTable($('socTable'), socs, S.socSort, S.socAll, $('socMore'),
+    x => `<b>${esc(x.k)}</b><div class="muted small">${esc(regionOf(x.k))}</div>`, 'SOC', 'soc');
+  rankTable($('routeTable'), routes, S.routeSort, S.routeAll, $('routeMore'), x => routeHtml(x.k), 'Route', 'route');
+
+  const n = emptyDetail().length, q = S.emPick;
+  $('emPickNote').innerHTML = q
+    ? `<b>${q.type === 'soc' ? esc(q.k) : esc(String(q.k).split(' > ')[0]) + ' route'}</b> · ${DIR_LABEL[q.di].toLowerCase()} legs${q.type === 'route' ? `<div class="small" style="margin-top:2px">${routeHtml(q.k)}</div>` : ''}`
+    : '<b>All SOCs and routes</b> in the current filters';
+  $('emPickClear').hidden = !q;
+  $('emDownload').disabled = !n;
+  $('emDownload').textContent = `Download ${fmt(n)} empty leg${n === 1 ? '' : 's'} (CSV)`;
+}
+
+function emptyDetail() {
+  const ds = new Set(dates()), q = S.emPick;
+  return EM_DETAIL.filter(r => ds.has(r.d) && (!S.emCost || r.c === S.emCost) && (!S.emDir || r.di === S.emDir) &&
+    (!S.region || regionOf(r.soc) === S.region) &&
+    (!q || (q.di === r.di && (q.type === 'soc' ? r.soc === q.k : r.route === q.k))));
+}
+
+function downloadEmptyLegs() {
+  const rows = emptyDetail();
+  const head = ['LT date', 'LT number', 'Cost type', 'Vendor', 'Vehicle type', 'Leg type', 'SOC', 'Hub', 'Leg',
+    'Leg scheduled departure', 'Leg actual departure', 'Leg actual arrival', 'Route', 'SOC region'];
+  const leg = r => r.di === 'FM → SOC' ? `${r.hub} > ${r.soc}` : `${r.soc} > ${r.hub}`;
+  const cell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = [head, ...rows.map(r => [r.d, r.lt, r.c, r.v, r.vt, DIR_LABEL[r.di], r.soc, r.hub, leg(r), r.std, r.atd, r.ata, r.route, regionOf(r.soc)])]
+    .map(cols => cols.map(cell).join(','));
+  const q = S.emPick, slug = s => String(s).split(' > ')[0].replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const name = `empty-legs_${S.from}_to_${S.to}${q ? '_' + slug(q.k) + (q.type === 'route' ? '-route' : '') : ''}${S.emCost ? '_' + slug(S.emCost) : ''}.csv`;
+  const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ── wiring ─────────────────────────────────────────────────────────────────

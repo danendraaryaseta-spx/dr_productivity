@@ -161,12 +161,12 @@ def build_lt_stats(df):
         'Empty': finished & (n_judged > 0) & (n_empty == n_judged),
         'Work_Hrs': hrs.where(finished),
     })
-    rel = d.loc[judged, ['trip_number', 'origin_station', 'dest_station']].copy()
+    rel = d.loc[judged, ['trip_number', 'origin_station', 'dest_station', 'trip_std', 'trip_atd', 'dest_ata']].copy()
     rel['Direction'] = inbound[judged].map({True: 'FM → SOC', False: 'SOC → LM'})
     rel['SOC'] = rel['dest_station'].where(rel['Direction'] == 'FM → SOC', rel['origin_station'])
     rel['Hub'] = rel['origin_station'].where(rel['Direction'] == 'FM → SOC', rel['dest_station'])
     rel['Empty'] = empty_leg[judged]
-    return stats, rel[['trip_number', 'Direction', 'SOC', 'Hub', 'Empty']]
+    return stats, rel[['trip_number', 'Direction', 'SOC', 'Hub', 'Empty', 'trip_std', 'trip_atd', 'dest_ata']]
 
 
 def build_trips_first_leg(gc):
@@ -374,9 +374,10 @@ def build_empty_lt(all_lts, rel_legs, dc_regions):
     # build_lt_stats), dated by its LT's first-leg date so it follows the Date Window.
     # Two roll-ups, each shipped only where there's at least one empty leg (the rest never
     # appear in the section): per SOC + direction, and per route (the LT's trip_route).
-    lts = all_lts[['trip_number', 'Date', 'cost_type', 'trip_route']]
+    lts = all_lts[['trip_number', 'Date', 'cost_type', 'trip_route', 'agency_name', 'vehicle_type_name']]
     legs = rel_legs.merge(lts, on='trip_number')
     legs['cost_type'] = legs['cost_type'].map(normalize_cost_type)
+    legs['agency_name'] = legs['agency_name'].replace('', 'Unknown')
 
     def rollup(key):
         hot = set(map(tuple, legs.loc[legs['Empty'], [key, 'Direction']].drop_duplicates().values))
@@ -392,13 +393,20 @@ def build_empty_lt(all_lts, rel_legs, dc_regions):
     legs['Region'] = legs['SOC'].map(dc_regions).fillna('Unknown')
     totals = pack(legs.groupby(['Date', 'cost_type', 'Region', 'Direction']).agg(
         Legs=('Empty', 'size'), Empty=('Empty', 'sum')).reset_index())
-    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs (all cost types), {int(legs["Empty"].sum())} empty, '
+    # One row per empty leg, for the planners' CSV download.
+    empty = legs[legs['Empty']].fillna('').sort_values(['Date', 'SOC', 'trip_std'], ascending=[False, True, True])
+    detail = [[r['Date'], r['trip_number'], ix(r['cost_type']), ix(r['agency_name']), ix(r['vehicle_type_name']),
+               ix(r['Direction']), ix(r['SOC']), ix(r['Hub']), ix(r['trip_route']),
+               r['trip_std'], r['trip_atd'], r['dest_ata']] for r in empty.to_dict('records')]
+    print(f'  Empty-leg section: {len(legs)} FM->SOC / SOC->LM legs (all cost types), {len(detail)} empty, '
           f'{len(socs)} SOC rows, {len(routes)} route rows')
     return {
         'strings': list(pool),
         'socs': socs,      # Date, Cost Type*, SOC*, Direction*, Legs, Empty   (* = index into strings)
         'routes': routes,  # Date, Cost Type*, Route*, Direction*, Legs, Empty
         'totals': totals,  # Date, Cost Type*, Region*, Direction*, Legs, Empty  - every leg, for headline rates
+        # Date, LT, Cost Type*, Vendor*, Vehicle Type*, Direction*, SOC*, Hub*, Route*, Leg STD, Leg ATD, Leg arrival
+        'detail': detail,
     }
 
 

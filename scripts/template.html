@@ -694,7 +694,7 @@ function renderProdChart(rs, ser) {
   prodChart = new Chart($('prodChart'), {
     type: 'line',
     data: { labels, datasets: lines.map((l, i) => ({
-      label: l.label, data: l.data, endLabel: l.endLabel, tension: .15, spanGaps: true,
+      label: l.label, data: l.data, endLabel: l.endLabel, tension: .15, spanGaps: false,
       order: l.role === 'nation' ? 0 : l.role === 'focus' ? 1 : 2,
       borderColor: () => colorOf(l, i), backgroundColor: () => colorOf(l, i), borderWidth: () => widthOf(l, i),
       pointRadius: l.role === 'nation' ? l.data.map((v, j) => partial.has(keys[j]) && v != null ? 4 : 0) : 0,

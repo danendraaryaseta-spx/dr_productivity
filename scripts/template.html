@@ -560,7 +560,8 @@ function renderTiles(rs) {
     { k: 'LT trips', v: fmt(lt), s: 'using DR trucks' },
     { k: 'Avg trucks onsite', v: n ? fmt(on / n) : '–', s: 'per day' },
     { k: 'Empty LTs', v: fmt(em), s: fin ? `${f1(pct(em, fin))}% of ${fmt(fin)} finished LTs` : 'no finished LTs' },
-    { k: 'Working hours', v: on ? f1(hrs / on) : '–', s: 'per truck per day' },
+    // Hours exist only for LTs the trackers still hold, so: hours per LT (on those) x trips per truck.
+    { k: 'Working hours', v: fin && on ? f1(hrs / fin * lt / on) : '–', s: fin ? `per truck per day · ${f1(hrs / fin)} h per LT` : 'per truck per day' },
   ]);
 }
 
@@ -741,7 +742,7 @@ function renderTrend(rs) {
   });
 
   $('trendTable').innerHTML = `<table><thead><tr><th style="padding:8px">${S.grain === 'week' ? 'Week' : 'Date'}</th><th class="n" style="padding:8px">Trucks onsite</th><th class="n" style="padding:8px">LT trips</th><th class="n" style="padding:8px">Productivity</th><th class="n" style="padding:8px">Empty LTs</th><th class="n" style="padding:8px">Work hrs / truck</th></tr></thead><tbody>` +
-    ser.map(s => `<tr><td>${s.label}${s.partial ? ' <span class="muted small">in progress</span>' : ''}</td><td class="n">${fmt(s.on)}</td><td class="n">${fmt(s.lt)}</td><td class="n"><b>${f2(s.prod)}</b></td><td class="n">${fmt(s.em)}</td><td class="n">${s.on ? f1(s.hrs / s.on) : '–'}</td></tr>`).join('') + '</tbody></table>';
+    ser.map(s => `<tr><td>${s.label}${s.partial ? ' <span class="muted small">in progress</span>' : ''}</td><td class="n">${fmt(s.on)}</td><td class="n">${fmt(s.lt)}</td><td class="n"><b>${f2(s.prod)}</b></td><td class="n">${fmt(s.em)}</td><td class="n">${s.on && s.fin ? f1(s.hrs / s.fin * s.lt / s.on) : '–'}</td></tr>`).join('') + '</tbody></table>';
 }
 
 // ── 02 DCs and vendors ─────────────────────────────────────────────────────

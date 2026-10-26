@@ -250,6 +250,8 @@ def read_dr_lts(gc, tracker_trips):
     trips = pd.DataFrame({
         'LT': df['LT'], 'Vendor': df['vendor'].str.strip(), 'Origin DC': df['origin'].str.strip(),
         'Vehicle Type': df['vt'].str.strip(), 'Cost Type': 'By Day', 'Date': df['Date'], 'Route': df['name'],
+        'Plate': df['plate'].str.replace(' ', '').str.upper(),
+        'ATD_Hour': sheet_serial_to_dt(df['atd']).dt.hour,
     }).merge(tracker_trips[['LT', 'Finished', 'Empty', 'Work_Hrs']], on='LT', how='left')
     trips['Finished'] = trips['Finished'].fillna(False).astype(bool)
     trips['Empty'] = trips['Empty'].fillna(False).astype(bool)
@@ -290,9 +292,25 @@ def build_onsite(gc, window_dates):
             # per-row key when Nopol is blank (legacy rows before this column
             # existed) so those still count individually.
             'unit_key': f'{date_str}|{vendor}|{plate}' if plate else f'ROW_{i}',
+            'Plate': plate.replace(' ', ''),
         })
     print(f'  Onsite: {len(rows)} qualifying "By Day" check-ins in window')
     return pd.DataFrame(rows)
+
+
+def credit_to_checkin_day(trips, onsite):
+    """A DR rental runs 24h from check-in, so trucks checked in one day often run trips after
+    midnight. Credit such a trip to the check-in day: if its plate isn't onsite on the trip date
+    but was the day before and the trip left before 12:00, move it back one day. Otherwise the
+    trip day gets trips with no trucks (e.g. Jabo 11 Oct read 8.75) and the check-in day the reverse."""
+    reg = set(zip(onsite['Date'], onsite['Plate']))
+    prev = (pd.to_datetime(trips['Date']) - pd.Timedelta(days=1)).dt.strftime('%Y-%m-%d')
+    move = [(d, p) not in reg and (pd_, p) in reg and h < 12
+            for d, pd_, p, h in zip(trips['Date'], prev, trips['Plate'], trips['ATD_Hour'])]
+    trips = trips.copy()
+    trips.loc[move, 'Date'] = prev[move]
+    print(f'  Credited {sum(move)} after-midnight DR trips to the previous (check-in) day')
+    return trips
 
 
 def build_dc_regions(trips, onsite, empty_socs):
@@ -477,8 +495,12 @@ def main():
     onsite = build_onsite(gc, window_dates)
     if bi_ok and len(onsite):
         # Productivity needs both halves: keep only days the onsite sheet also covers.
-        window_dates = [d for d in window_dates if d >= onsite['Date'].min()]
+        # Today is still running (WIB), so it's left out.
+        today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime('%Y-%m-%d')
+        window_dates = [d for d in window_dates if onsite['Date'].min() <= d < today]
+        dr_trips = credit_to_checkin_day(dr_trips, onsite)
         dr_trips = dr_trips[dr_trips['Date'].isin(window_dates)]
+        onsite = onsite[onsite['Date'].isin(window_dates)]
     print(f'  Productivity window: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Computing aggregates...')

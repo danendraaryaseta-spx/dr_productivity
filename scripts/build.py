@@ -15,6 +15,7 @@ Mirrors the logic already proven out in:
 import os
 import json
 import math
+import sys
 from datetime import datetime, timedelta, timezone
 
 import gspread
@@ -230,8 +231,10 @@ def build_trips_first_leg(gc):
 
 def sheet_serial_to_dt(v):
     # IMPORTRANGE/QUERY hands dates over as spreadsheet serial numbers (days since 1899-12-30).
+    # A few rows arrive as text dates (M/D/YYYY) instead; parse those as dates.
     s = pd.to_numeric(v, errors='coerce')
-    return pd.to_datetime('1899-12-30') + pd.to_timedelta(s, unit='D')
+    dt = pd.to_datetime('1899-12-30') + pd.to_timedelta(s, unit='D')
+    return dt.fillna(pd.to_datetime(pd.Series(v, index=dt.index).where(s.isna()), format='%m/%d/%Y', errors='coerce'))
 
 
 def read_dr_lts(gc, tracker_trips):
@@ -541,6 +544,19 @@ def main():
     out_dir = os.path.join(os.path.dirname(__file__), '..', 'docs')
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, 'index.html')
+    # The IMPORTRANGE sometimes loads only some chunks and hands over a half-empty sheet. Keep the
+    # last good page (the run fails, so it shows red in Actions) rather than publish a false drop.
+    try:
+        with open(out_path, encoding='utf-8') as f:
+            old = f.read()
+        prev = json.JSONDecoder().raw_decode(old[old.index('{"summary"'):])[0]['productivity']
+        prev_rate = prev['total_trips'] / len(prev['dates'])
+    except Exception:
+        prev_rate = None
+    new_rate = productivity['total_trips'] / max(len(window_dates), 1)
+    if bi_ok and prev_rate and new_rate < 0.7 * prev_rate:
+        sys.exit(f'DR trips per day fell to {new_rate:.0f} from {prev_rate:.0f} - the BI import looks '
+                 f'partly loaded. Keeping the last published page.')
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(html)
 

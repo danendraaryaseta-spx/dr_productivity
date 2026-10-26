@@ -670,8 +670,11 @@ function renderProdChart(rs, ser) {
   const widthOf = (l, i) => prodHover === i && minor(l) ? 2.75 : l.width;
   const partial = new Set(ser.filter(s => s.partial).map(s => s.key));
   const vals = lines.flatMap(l => l.data).filter(v => v != null);
-  // Small regions/DCs swing wildly on low truck counts; cap the axis so the main lines stay readable.
-  const yMax = Math.min(3, Math.max(2, Math.ceil(Math.max(0, ...vals) * 2) / 2));
+  // Small regions/DCs swing wildly on low truck counts: fit the axis to the 98th-percentile value (not
+  // the max) so a rare one-day spike can't squash the main lines, kept between 4 and 8.
+  const sorted = [...vals].sort((a, b) => a - b);
+  const p98 = sorted.length ? sorted[Math.floor(0.98 * (sorted.length - 1))] : 0;
+  const yMax = Math.min(8, Math.max(4, Math.ceil(p98 * 1.1 * 2) / 2));
 
   const po = baseOptions();
   po.scales.y.max = yMax;

@@ -26,6 +26,9 @@ SHEET_IDS = {
     'FM_SOC': '1wbM3PzJBWweJ0lOHljWvPmBAHqAZPO4fYYKJky32ON0',
     'ONSITE': '1yp7eVkhZftRjXCzEWye0hkCkXTLSlo-wlC1HaGf-A_Y',
     'SOC_SOC': '11CidDsjDqCWxZ0u9AWXDm2gyNQeWi8vKd_lOInv6_lU',
+    # "By Day" LTs imported from BI's Line Haul Raw ([21012] ... On Call Tracker Bizsol). One row per
+    # LT with plate, kept ~5 weeks back - the trackers above only hold the last few days of trips.
+    'DR_LT': '1Kcl0MqINT7_LqTX9WJX9KGZw0S6pHzwcomitFGwpVeo',
 }
 
 TRACKER_COLS = ['trip_date_v2', 'trip_route', 'slot_number', 'trip_number', 'cost_type',
@@ -223,6 +226,36 @@ def build_trips_first_leg(gc):
 
     print(f'  First-leg reduction: {len(departed)} departed legs -> {len(first_leg)} distinct trips across {len(all_dates)} days')
     return trips, all_dates, socsoc_ok, rel_legs, all_lts
+
+
+def sheet_serial_to_dt(v):
+    # IMPORTRANGE/QUERY hands dates over as spreadsheet serial numbers (days since 1899-12-30).
+    s = pd.to_numeric(v, errors='coerce')
+    return pd.to_datetime('1899-12-30') + pd.to_timedelta(s, unit='D')
+
+
+def read_dr_lts(gc, tracker_trips):
+    """DR LTs from the BI import: one row per LT, ~5 weeks back. Same rules as the trackers - the LT
+    starts at a DC, actually departed, not cancelled. Empty-LT and working-hours stats need per-leg
+    data only the trackers have, so they're joined on by LT number and exist for recent LTs only."""
+    ws = gc.open_by_key(SHEET_IDS['DR_LT']).worksheet('Sheet1')
+    v = ws.get('A2:J')
+    df = pd.DataFrame([(list(r) + [''] * 10)[:10] for r in v],
+                      columns=['trip_date', 'LT', 'name', 'origin', 'plate', 'vt', 'vendor', 'cost', 'status', 'atd'])
+    df = df[(df['LT'] != '') & (df['cost'] == 'By Day')].drop_duplicates('LT')
+    df['Date'] = sheet_serial_to_dt(df['trip_date']).dt.strftime('%Y-%m-%d')
+    ok = (df['origin'].map(is_dc) & ~df['status'].str.startswith('Cancelled')
+          & (pd.to_numeric(df['atd'], errors='coerce') > 0) & df['Date'].notna())
+    df = df[ok]
+    trips = pd.DataFrame({
+        'LT': df['LT'], 'Vendor': df['vendor'].str.strip(), 'Origin DC': df['origin'].str.strip(),
+        'Vehicle Type': df['vt'].str.strip(), 'Cost Type': 'By Day', 'Date': df['Date'], 'Route': df['name'],
+    }).merge(tracker_trips[['LT', 'Finished', 'Empty', 'Work_Hrs']], on='LT', how='left')
+    trips['Finished'] = trips['Finished'].fillna(False).astype(bool)
+    trips['Empty'] = trips['Empty'].fillna(False).astype(bool)
+    print(f'  DR LTs (BI import): {len(trips)} from a DC, departed, not cancelled, '
+          f'{trips["Date"].min()} .. {trips["Date"].max()}; {int(trips["Finished"].sum())} with tracker leg data')
+    return trips
 
 
 def build_onsite(gc, window_dates):
@@ -428,15 +461,30 @@ def main():
 
     print('Fetching trip trackers (SOC-LM/FM-SOC/SOC-SOC)...')
     trips, window_dates, socsoc_ok, rel_legs, all_lts = build_trips_first_leg(gc)
-    print(f'  Date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
+    print(f'  Tracker date range: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
+
+    print('Fetching DR LTs (BI import)...')
+    try:
+        dr_trips = read_dr_lts(gc, trips)
+        bi_ok = True
+    except Exception as e:
+        print(f'  DR LT import unavailable, falling back to the trackers: {e}')
+        dr_trips, bi_ok = trips, False
+    if bi_ok:
+        window_dates = sorted(dr_trips['Date'].unique())
 
     print('Fetching onsite registrations...')
     onsite = build_onsite(gc, window_dates)
+    if bi_ok and len(onsite):
+        # Productivity needs both halves: keep only days the onsite sheet also covers.
+        window_dates = [d for d in window_dates if d >= onsite['Date'].min()]
+        dr_trips = dr_trips[dr_trips['Date'].isin(window_dates)]
+    print(f'  Productivity window: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)')
 
     print('Computing aggregates...')
-    dashboard = build_dashboard_data(trips, window_dates)
-    productivity = build_productivity(trips, onsite, window_dates)
-    dc_regions = build_dc_regions(trips, onsite, rel_legs['SOC'].unique())
+    dashboard = build_dashboard_data(dr_trips, window_dates)
+    productivity = build_productivity(dr_trips, onsite, window_dates)
+    dc_regions = build_dc_regions(dr_trips, onsite, rel_legs['SOC'].unique())
     empty_lt = build_empty_lt(all_lts, rel_legs, dc_regions)
 
     raw = dict(dashboard)
@@ -447,6 +495,12 @@ def main():
     raw['generated_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     errors = []
+    if not bi_ok:
+        errors.append({
+            'source': 'DR LT import (BI)',
+            'message': 'Could not be read, so DR trips come from the trip trackers instead. Those only keep the '
+                       'last few days of trips, so older days show too few trips and too-low productivity.',
+        })
     if not socsoc_ok:
         errors.append({
             'source': 'SOC-SOC trip tracker',

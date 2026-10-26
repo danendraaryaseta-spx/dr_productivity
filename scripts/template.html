@@ -266,9 +266,11 @@ footer { padding-block: 30px 40px; color: var(--muted); font-size: 12px; }
       <details class="how"><summary>How it's counted</summary><div>
         <b>Trucks onsite</b>: "By Day" check-ins on the On Site Registration sheet, excluding Expired and No Show.
         The same plate checked in twice on one day counts once; on two days it counts twice (truck-days).
-        <b>LT trips</b>: each LT counted once on the day its first leg left a DC, billed "By Day", from the SOC-LM,
-        FM-SOC and SOC-SOC trackers. <b>Empty LT</b> and <b>working hours</b> use finished LTs only (every leg arrived);
-        working hours run from the truck reaching its first station to reaching its last.
+        <b>LT trips</b>: each "By Day" LT once, on its trip date, if it starts at a DC, departed and wasn't cancelled,
+        from BI's Line Haul Raw (about five weeks back). <b>Empty LT</b> and <b>working hours</b> need per-leg data that only
+        the SOC-LM, FM-SOC and SOC-SOC trackers have, and those keep just the last few days, so these two cover recent LTs
+        only, and only finished ones (every leg arrived). Working hours run from the truck reaching its first station to
+        reaching its last.
       </div></details>
     </div>
 
